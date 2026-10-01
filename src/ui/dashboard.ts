@@ -109,6 +109,7 @@ export class DashboardView extends ItemView {
     this.observers.forEach((o) => o.disconnect());
     this.orrery?.destroy();
     this.revealer?.disconnect();
+    this.tip.disconnect();
   }
 
   // ---------- chrome ----------
@@ -477,7 +478,7 @@ export class DashboardView extends ItemView {
     });
   }
 
-  private whenCard(A: Analysis) {
+  private whenCard(A: Analysis, color?: string) {
     const d = A.d.slice(-26 * 7);
     if (d.length < 7) return;
     const max = Math.max(1, ...d.map((x) => x.daily));
@@ -487,6 +488,11 @@ export class DashboardView extends ItemView {
     const W = t().weekdays;
     this.domCard({ title: t().cWhen, desc: t().dWhen, wide: true }, (el) => {
       const when = el.createDiv({ cls: "pp-when" });
+      // A single plugin's calendar is shaded with that plugin's color; the overview keeps the neutral blue.
+      if (color) when.setCssProps({
+        "--pp-h1": alpha(color, 0.14), "--pp-h2": alpha(color, 0.32), "--pp-h3": alpha(color, 0.52),
+        "--pp-h4": alpha(color, 0.74), "--pp-h5": color, "--pp-s1": color,
+      });
       const heat = when.createDiv().createDiv({ cls: "pp-heat" });
       heat.createSpan();
       W.forEach((w, i) => heat.createSpan({ cls: "pp-wk", text: i % 2 ? "" : w }));
@@ -634,27 +640,6 @@ export class DashboardView extends ItemView {
 
     this.rankCard([id], false);
 
-    const launches = launchesAll.filter((v) => v.known);
-    if (launches.length) {
-      const peak = launches.reduce((b, v, i) => !v.partial && (b < 0 || v.first3 > launches[b].first3) ? i : b, -1);
-      this.chartCard({ title: t().cLaunch, desc: t().dLaunch }, () => {
-        const o = baseOptions(P, this.plugin.motion());
-        o.layout = { padding: { top: 18 } };
-        o.scales.x.ticks.callback = versionTick;
-        o.plugins.tooltip.callbacks = {
-          title: (it: TI[]) => "v" + it[0].label,
-          label: (it: TI) => { const v = launches[it.dataIndex]; return [` ${t().cLaunch} ${fmt(v.first3)}${v.partial ? t().inProgress(v.days) : ""}`, t().soFar(fmt(v.total)), t().firstSeen(v.first)]; },
-        };
-        return {
-          type: "bar",
-          data: { labels: launches.map((v) => v.version), datasets: [{ data: launches.map((v) => v.first3), backgroundColor: launches.map((v) => v.partial ? alpha(color, 0.4) : color),
-            borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: "bottom", maxBarThickness: 22 }] },
-          options: o,
-          plugins: [peakLabel(P, peak, peak >= 0 ? t().best(fmt(launches[peak].first3)) : "")],
-        };
-      });
-    }
-
     if (versions.length) {
       const relDate = Object.fromEntries((store.releases[id] ?? []).map((r) => [r.version, r.date.slice(0, 10)]));
       this.chartCard({ title: t().cVersions, desc: t().dVersions(versions.length), height: Math.max(240, versions.length * 22 + 40) }, () => {
@@ -670,8 +655,29 @@ export class DashboardView extends ItemView {
       });
     }
 
+    const launches = launchesAll;
+    if (launches.length) {
+      const peak = launches.reduce((b, v, i) => !v.partial && (b < 0 || v.first3 > launches[b].first3) ? i : b, -1);
+      this.chartCard({ title: t().cLaunch, desc: t().dLaunch, height: Math.max(240, launches.length * 22 + 40) }, () => {
+        const o = baseOptions(P, this.plugin.motion(), { indexAxis: "y" });
+        o.scales.y.ticks.callback = versionTick;
+        o.scales.y.ticks.autoSkip = false;
+        o.plugins.tooltip.callbacks = {
+          title: (it: TI[]) => "v" + it[0].label,
+          label: (it: TI) => { const v = launches[it.dataIndex]; return [t().launchBody(fmt(v.first3), fmt(v.total)) + (v.partial ? t().inProgress(v.days) : ""), t().firstSeen(v.first)]; },
+        };
+        return {
+          type: "bar",
+          data: { labels: launches.map((v) => v.version), datasets: [{ data: launches.map((v) => v.first3), backgroundColor: launches.map((v) => v.partial ? alpha(color, 0.4) : color),
+            borderRadius: { topRight: 4, bottomRight: 4 }, borderSkipped: "left", maxBarThickness: 16 }] },
+          options: o,
+          plugins: [peakLabel(P, peak, peak >= 0 ? t().best(fmt(launches[peak].first3)) : "")],
+        };
+      });
+    }
+
     this.standingCard([id]);
-    this.whenCard(A);
+    this.whenCard(A, color);
     this.journeyCard(A, name);
     this.tableCard([t().hDate, t().hTotal, t().hNew, t().hRank],
       [...full].reverse().filter((x) => x.total != null).map((x) => [x.date, fmt(x.total), x.daily == null ? "–" : signed(x.daily), x.rank ? fmt(x.rank) : "–"]));

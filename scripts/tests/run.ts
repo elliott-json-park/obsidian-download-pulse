@@ -149,6 +149,22 @@ test("race: days until the one behind catches up, or null when it can't", () => 
   assert.equal(new Model(s).race("me", "far")?.days, null);
 });
 
+test("launches: an already-out version shows its first 3 observed days, a fresh one its launch count", () => {
+  const s = emptyStore();
+  // 1.0.0 was already out when tracking started; 1.1.0 launched the next day.
+  logVersions(s, "a", "2026-09-10", { "1.0.0": 800 });
+  logVersions(s, "a", "2026-09-11", { "1.0.0": 850, "1.1.0": 3 });
+  logVersions(s, "a", "2026-09-12", { "1.0.0": 900, "1.1.0": 8 });
+  setPoint(s, "a", "2026-09-12", 900, 1);
+  const L = new Model(s).launches("a");
+  const old = L.find((x) => x.version === "1.0.0");
+  const fresh = L.find((x) => x.version === "1.1.0");
+  assert.equal(old.known, false);
+  assert.equal(old.first3, 900 - 800);
+  assert.equal(fresh.known, true);
+  assert.equal(fresh.first3, 8);
+});
+
 test("standing reads rank, share and the climb over 7 days", () => {
   const s = emptyStore();
   linear(s, "a", "2026-09-01", 10, 0, 10);

@@ -189,7 +189,7 @@
 .pp-author-row input { margin-top: 3px; }
 
 /* tooltip */
-.pp-tip { position: fixed; z-index: var(--layer-tooltip); pointer-events: none; background: var(--pp-surface); color: var(--pp-ink-1); border: 1px solid var(--pp-axis); border-radius: 8px; padding: 7px 10px; font-size: 12.5px; line-height: 1.5; opacity: 0; transition: opacity .12s; max-width: 300px; box-shadow: var(--shadow-s); }
+.pp-tip { position: fixed; z-index: var(--layer-tooltip); pointer-events: none; background: var(--background-primary); color: var(--text-normal); border: 1px solid var(--background-modifier-border-hover); border-radius: 8px; padding: 7px 10px; font-size: 12.5px; line-height: 1.5; opacity: 0; transition: opacity .12s; max-width: 300px; box-shadow: var(--shadow-s); }
 .pp-tip.is-on { opacity: 1; }
 .pp-tip b { font-weight: 620; }
 

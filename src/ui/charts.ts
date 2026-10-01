@@ -9,6 +9,12 @@ import { mean } from "../analysis";
 
 Chart.register(LineController, BarController, LineElement, BarElement, PointElement, CategoryScale, LinearScale, LogarithmicScale, Filler, Tooltip);
 
+// Horizontal bars are wide, so the default anchor — the bar's far end — can sit far from the cursor.
+// Anchoring at the cursor keeps the tooltip beside the pointer as it moves along a bar.
+type CursorPositioner = (items: readonly TI[], eventPosition?: { x: number; y: number }) => { x: number; y: number } | false;
+const cursorPositioner: CursorPositioner = (_items, eventPosition) => (eventPosition ? { x: eventPosition.x, y: eventPosition.y } : false);
+(Tooltip.positioners as unknown as Record<string, CursorPositioner>).cursor = cursorPositioner;
+
 export { Chart };
 
 /** The dashboard's colors, read from the theme each render so light, dark and custom themes all fit. */
@@ -104,6 +110,7 @@ export function baseOptions(P: Palette, motion: boolean, o: { stacked?: boolean;
     plugins: {
       legend: { display: false },
       tooltip: {
+        position: indexAxis === "y" ? "cursor" : "average",
         backgroundColor: P.surface, titleColor: P.ink1, bodyColor: P.ink1, footerColor: P.ink2, borderColor: P.axis, borderWidth: 1,
         padding: 10, boxPadding: 4, usePointStyle: true, titleFont: { weight: "600" }, footerFont: { weight: "400" }, cornerRadius: 10,
       },
@@ -242,11 +249,19 @@ export function peakLabel(P: Palette, index: number, text: string, skip?: (ds: D
       if (index < 0) return;
       const metas = c.data.datasets.map((d, i) => skip?.(d as unknown as Ds) ? null : c.getDatasetMeta(i).data[index]).filter((m) => m != null);
       if (!metas.length) return;
-      const top = Math.min(...metas.map((m) => m.y)), x = metas[0].x, a = c.chartArea;
-      const edge = x > a.right - 40;
+      const a = c.chartArea;
       c.ctx.save(); c.ctx.font = `600 11.5px ${P.font}`; c.ctx.fillStyle = P.ink1;
-      c.ctx.textAlign = edge ? "right" : "center";
-      c.ctx.fillText(text, edge ? a.right : x, top - 7); c.ctx.restore();
+      if (c.options.indexAxis === "y") {
+        const m = metas[0], right = m.x, flip = right + 10 + c.ctx.measureText(text).width > a.right;
+        c.ctx.textBaseline = "middle";
+        c.ctx.textAlign = flip ? "right" : "left";
+        c.ctx.fillText(text, flip ? right - 10 : right + 10, m.y);
+      } else {
+        const top = Math.min(...metas.map((m) => m.y)), x = metas[0].x, edge = x > a.right - 40;
+        c.ctx.textAlign = edge ? "right" : "center";
+        c.ctx.fillText(text, edge ? a.right : x, top - 7);
+      }
+      c.ctx.restore();
     },
   };
 }

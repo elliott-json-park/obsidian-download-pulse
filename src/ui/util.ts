@@ -58,36 +58,69 @@ export function alpha(color: string, a: number): string {
 export class Tip {
   el: HTMLElement;
   private texts = new WeakMap<Element, string>();
+  private anchor: Element | null = null;
+  private ox = 0; private oy = 0;
+  private clean: (() => void) | null = null;
+
   constructor(private root: HTMLElement) {
-    this.el = root.createDiv({ cls: "pp-tip", attr: { role: "tooltip" } });
+    // Mounted on the body: fixed positioning must be viewport-relative, and Obsidian can wrap the
+    // view in a transformed leaf that would otherwise become the fixed-position containing block.
+    this.el = root.win.document.body.createDiv({ cls: "pp-tip", attr: { role: "tooltip" } });
     root.addEventListener("pointermove", (e) => {
       const target = (e.target as HTMLElement).closest?.("[data-pp-tip]");
-      if (target && this.texts.has(target)) this.show(this.texts.get(target) as string, e.clientX, e.clientY);
+      if (target && this.texts.has(target)) this.show(this.texts.get(target) as string, e.clientX, e.clientY, target);
       else if (!(e.target as HTMLElement).closest?.(".pp-orrery")) this.hide();
     });
     root.addEventListener("pointerleave", () => this.hide());
     root.addEventListener("focusin", (e) => {
       const target = (e.target as HTMLElement).closest?.("[data-pp-tip]");
-      if (target && this.texts.has(target)) { const r = target.getBoundingClientRect(); this.show(this.texts.get(target) as string, r.left + r.width / 2, r.top); }
+      if (target && this.texts.has(target)) { const r = target.getBoundingClientRect(); this.show(this.texts.get(target) as string, r.left + r.width / 2, r.top, target); }
     });
     root.addEventListener("focusout", () => this.hide());
+    const win = root.win;
+    // While visible, hover tooltips follow their anchor as the content scrolls or the window resizes.
+    win.addEventListener("scroll", this.follow, true);
+    win.addEventListener("resize", this.follow);
+    this.clean = () => { win.removeEventListener("scroll", this.follow, true); win.removeEventListener("resize", this.follow); };
   }
+
+  disconnect(): void { this.clean?.(); this.clean = null; }
+
   bind(el: HTMLElement, text: string, focusable = true): HTMLElement {
     this.texts.set(el, text);
     el.setAttr("data-pp-tip", "");
     if (focusable && !el.hasAttribute("tabindex")) el.tabIndex = 0;
     return el;
   }
-  show(text: string, x: number, y: number): void {
+
+  show(text: string, x: number, y: number, anchor?: Element): void {
+    this.anchor = anchor ?? null;
+    if (anchor) {
+      const r = anchor.getBoundingClientRect();
+      this.ox = x - r.left; this.oy = y - r.top;
+    }
     this.el.empty();
     rich(this.el, text);
     this.el.addClass("is-on");
+    this.place(x, y);
+  }
+
+  /** Keeps an anchored tooltip glued to its element while the viewport moves under it. */
+  private follow = (): void => {
+    if (!this.anchor || !this.el.hasClass("is-on")) return;
+    const r = (this.anchor as HTMLElement).getBoundingClientRect();
+    if (!r.width && !r.height) return;
+    this.place(r.left + this.ox, r.top + this.oy);
+  };
+
+  private place(x: number, y: number): void {
     const r = this.el.getBoundingClientRect(), win = this.el.win;
     const left = Math.max(8, Math.min(win.innerWidth - r.width - 8, x + 14));
     const top = y - r.height - 12 < 8 ? y + 18 : y - r.height - 12;
     this.el.setCssStyles({ left: left + "px", top: Math.max(8, top) + "px" });
   }
-  hide(): void { this.el.removeClass("is-on"); }
+
+  hide(): void { this.el.removeClass("is-on"); this.anchor = null; }
 }
 
 // ---------- motion ----------
