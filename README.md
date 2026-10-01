@@ -1,0 +1,167 @@
+# Plugin Pulse
+
+**A download dashboard for Obsidian plugin authors.** Follow your plugins' daily
+downloads, rank and milestones, and see how they grow next to the plugins you
+compete with: all inside Obsidian.
+
+![The overview: 2,454 downloads across three plugins, an orbit with one planet per plugin, the cumulative chart with a 10-day forecast, and the sidebar widget with each plugin's last two weeks](docs/overview.png)
+
+The community directory shows one number per plugin: total downloads. Plugin
+Pulse keeps that number every day, so you can see the shape behind it. Which
+day was your best. Whether the last release moved anything. How far you are
+from the next milestone. And whether the plugin you're up against is pulling
+away or slowing down.
+
+---
+
+## What it shows
+
+**Your plugins, one by one and together.** For each plugin you get the total
+with a forecast, daily new downloads with a 7-day average, rank among all
+community plugins, the first three days of every release, and downloads by
+version. You also get a weekday pattern, a calendar and the milestones it has
+passed. With more than one plugin, *Overview* adds them up and *Compare* puts
+them side by side, by date or by days since listing.
+
+**Your plugin against its competitors.** Pick the plugins you compete with (it
+suggests similar ones from the directory) and switch a plugin's page to
+*vs competitors*:
+
+- **Share of new downloads**: your part of the group's last 7 days, and how it moved.
+- **Next to pass**: the plugin just ahead of you, the gap, and at both 14-day paces how many days until you pass it. Or that it is pulling away.
+- **Behind you**: whether anyone below is closing in, and when they'd pass you.
+- **Fastest growing**: growth relative to size, so a small plugin on the rise stands out.
+- **At the same age**: everyone's total on the same day after listing.
+- **Release pace**: how often you ship compared with the group.
+
+![Vault Orrery against four 3D-graph plugins: #2 of 5, 23.6% of the group's new downloads this week, cumulative on a log scale, daily downloads smoothed over 7 days, and each plugin's share of new downloads](docs/competitors.png)
+
+Plugins of very different sizes switch the cumulative chart to a log scale on
+their own, so a plugin with 600 downloads isn't a flat line under one with 11,000.
+
+**Light and dark, and your theme.** The dashboard uses your theme's colors and
+fonts, and keeps a deliberately quiet look: one big number, hairlines, and
+color only where it means a plugin.
+
+![A single plugin in a dark theme: total, best day, daily downloads with a 7-day average, cumulative with forecast, downloads by version and position among all plugins](docs/plugin-dark.png)
+
+---
+
+## Three ways to look at it
+
+| | Where | For |
+|---|---|---|
+| **Dashboard** | A tab in the main area. Move it to its own window from the tab menu. | Reading the charts. It needs width, so it opens as a tab, not in a sidebar. |
+| **Glance** | The right sidebar | A widget that stays in view: totals, the latest day, two weeks of bars, and where you stand against your competitors. Click a plugin to open it in the dashboard. |
+| **Code block** | Any note | A summary in a daily note or a homepage. |
+
+<img src="docs/glance.png" width="300" align="right" alt="The sidebar widget: the total of three plugins, then one card per plugin with its latest day, 7 days, rank and the last two weeks as bars">
+
+````markdown
+```plugin-pulse
+```
+````
+
+Shows all your plugins. Options, one per line:
+
+````markdown
+```plugin-pulse
+plugin: vault-orrery
+rivals: true
+days: 30
+```
+````
+
+- `plugin:` — one or more plugin ids, comma-separated. Default: all of yours.
+- `rivals: true` — the plugin and its competitors, one card each.
+- `days:` — how many days of bars, 7 to 60. Default: 14.
+
+An optional status bar item shows your plugins' new downloads on the latest day.
+
+<br clear="right">
+
+---
+
+## Getting started
+
+1. **Install** Plugin Pulse from Settings → Community plugins.
+2. **Open the dashboard** with the pulse icon in the ribbon, or *Plugin Pulse: Open dashboard* in the command palette.
+3. **Follow your plugins.** Type your author name or GitHub username and every plugin listed under it is found at once. Or search any plugin by name.
+4. **Add competitors** with *Add competitors* on a plugin's page.
+
+Past daily totals are filled in right away (see [Where the numbers come
+from](#where-the-numbers-come-from)), so the charts aren't empty on day one.
+Rank history starts the day you install, because only the official file has it.
+
+**Any plugin works, not only your own.** Follow the leaders in a niche before
+you build in it, or watch a plugin you depend on.
+
+### Commands
+
+*Open dashboard* · *Open glance in the sidebar* · *Refresh now* · *Follow a plugin* · *Add a competitor*
+
+### Settings
+
+- **Your plugins**: reorder, remove, and edit each one's competitors.
+- **Check for new stats**: every 30 minutes to 6 hours, or only when you refresh.
+- **Fill in past history**, **Catch up on missed days**, **Read official history**: see below.
+- **GitHub token**: optional, for release dates and stars beyond GitHub's anonymous limit.
+- **Motion**, **Status bar**, **Milestone notices**, **Language** (English, 한국어).
+- **Export / import history** as JSON, for backup or another device. Import also reads the `history.json` of the standalone HTML dashboard this plugin grew out of.
+
+---
+
+## Where the numbers come from
+
+Obsidian publishes every community plugin's total downloads once a day in
+[`community-plugin-stats.json`](https://github.com/obsidianmd/obsidian-releases/blob/HEAD/community-plugin-stats.json).
+That number counts installs **and updates**, so it isn't a count of users. A
+plugin that ships often collects downloads from its existing users too.
+
+Plugin Pulse reads that file and keeps each day's value in its own data file.
+A "day" is the UTC day Obsidian published the file. Forecasts and "around
+Oct 6" estimates assume the last 7 days' pace continues.
+
+### Network use
+
+Plugin Pulse makes only anonymous `GET` requests for public data, and sends
+nothing about your vault:
+
+| Request | Why | When |
+|---|---|---|
+| `api.github.com/repos/obsidianmd/obsidian-releases/commits` | Has a new stats file been published? One small call. | Each check (hourly by default) |
+| `raw.githubusercontent.com/obsidianmd/obsidian-releases/…/community-plugin-stats.json` | The official numbers, about 2.5 MB | Only when Obsidian has published a new file, about once a day |
+| `raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugins.json` | Plugin names, authors and repos for search and suggestions | When you search or add competitors |
+| `api.github.com/repos/<owner>/<repo>` and `…/releases` | Stars and release dates of followed plugins | At most twice a day per plugin |
+| `yulei-chen.github.io/obsidian-plugin-download-stats/data/plugins/<id>.json` | Earlier daily totals from a public, third-party archive of the official file. Not affiliated with Obsidian. | When you follow a plugin, then every few days. **Turn off with *Fill in past history*.** |
+
+With *Fill in past history* off, history starts the day you follow a plugin.
+*Read official history* can instead download the official file for each of
+the past 14 or 30 days. That's about 2.5 MB a day, and you also get each
+day's rank. *Catch up on missed days* does the same for up to 7 days (3 on
+mobile) when Obsidian was closed.
+
+There is no telemetry, and the GitHub token, if you add one, stays in
+Obsidian's secret storage.
+
+---
+
+## Development
+
+```bash
+npm install
+npm run build      # type-check and bundle main.js
+npm test           # storage, analysis and the refresh engine against a fake network
+npm run harness    # the real plugin in a browser page at http://localhost:5178
+```
+
+The harness runs `src/` with a small stand-in for the `obsidian` module and
+live data. Add `?demo&bare&motion=off&view=vault-orrery&mode=rivals` to open a
+given page; the screenshots above were taken that way. `npx eslint .` runs the
+same rules as Obsidian's plugin review.
+
+Chart.js is bundled into `main.js`. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+## License
+
+[MIT](LICENSE) © Elliott Park
