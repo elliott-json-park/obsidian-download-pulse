@@ -4,7 +4,7 @@
 Every plugin's downloads, rank and milestones in one dashboard, the insights
 worth acting on, and a live watch on the plugins you compete with.
 
-![The overview: 2,454 downloads across three plugins, an orbit with one planet per plugin, the cumulative chart with a 10-day forecast, and the sidebar widget with each plugin's last two weeks](docs/overview.png)
+![Download Pulse in Obsidian: the dashboard tab shows 2,454 downloads across three plugins, an orbit with one planet per plugin and insight cards, and the right sidebar widget shows each plugin's latest day and last two weeks](docs/obsidian/1-overview.png)
 
 The community directory gives you one number per plugin: a lifetime total.
 Once you maintain a few plugins, that number stops answering the questions you
@@ -46,16 +46,16 @@ suggests similar ones from the directory) and switch a plugin's page to
 - **At the same age**: everyone's total on the same day after listing.
 - **Release pace**: how often you ship compared with the group.
 
-![Vault Orrery against four 3D-graph plugins: #2 of 5, 23.6% of the group's new downloads this week, cumulative on a log scale, daily downloads smoothed over 7 days, and each plugin's share of new downloads](docs/competitors.png)
+![Vault Orrery against four 3D-graph plugins in Obsidian: #2 of 5, 23.6% of the group's new downloads this week, Galaxy View pulling away, no one behind gaining, and a card per plugin with its last 30 days](docs/obsidian/2-competitors.png)
 
 Plugins of very different sizes switch the cumulative chart to a log scale on
 their own, so a plugin with 600 downloads isn't a flat line under one with 11,000.
 
-**Light and dark, and your theme.** The dashboard uses your theme's colors and
+**Your theme, light or dark.** The dashboard uses your theme's colors and
 fonts, and keeps a deliberately quiet look: one big number, hairlines, and
 color only where it means a plugin.
 
-![A single plugin in a dark theme: total, best day, daily downloads with a 7-day average, cumulative with forecast, downloads by version and position among all plugins](docs/plugin-dark.png)
+![One plugin's page: total, best day, overall rank, the latest release's effect, and daily downloads with release markers](docs/obsidian/3-plugin.png)
 
 ---
 
@@ -66,8 +66,6 @@ color only where it means a plugin.
 | **Dashboard** | A tab in the main area. Move it to its own window from the tab menu. | Reading the charts. It needs width, so it opens as a tab, not in a sidebar. |
 | **Glance** | The right sidebar | A widget that stays in view: totals, the latest day, two weeks of bars, and where you stand against your competitors. Click a plugin to open it in the dashboard. |
 | **Code block** | Any note | A summary in a daily note or a homepage. |
-
-<img src="docs/glance.png" width="300" align="right" alt="The sidebar widget: the total of three plugins, then one card per plugin with its latest day, 7 days, rank and the last two weeks as bars">
 
 ````markdown
 ```plugin-pulse
@@ -88,9 +86,14 @@ days: 30
 - `rivals: true` — the plugin and its competitors, one card each.
 - `days:` — how many days of bars, 7 to 60. Default: 14.
 
-An optional status bar item shows your plugins' new downloads on the latest day.
+![A plugin's note with a plugin-pulse code block comparing it with its competitors, next to the sidebar widget](docs/obsidian/5-note.png)
 
-<br clear="right">
+**Links into the dashboard.** `obsidian://plugin-pulse?view=vault-orrery&mode=rivals`
+opens a page of the dashboard from anywhere: a note, a bookmark, a launcher.
+`view` is `overview`, `compare` or a plugin id; `mode` is `self` or `rivals`;
+`range` is `7`, `30`, `90`, `365` or `all`.
+
+An optional status bar item shows your plugins' new downloads on the latest day.
 
 ---
 
@@ -169,7 +172,7 @@ npm run harness    # the real plugin in a browser page at http://localhost:5178
 
 The harness runs `src/` with a small stand-in for the `obsidian` module and
 live data. Add `?demo&bare&motion=off&view=vault-orrery&mode=rivals` to open a
-given page; the screenshots above were taken that way. `npx eslint .` runs the
+given page. The screenshots above are of the plugin running in Obsidian 1.13. `npx eslint .` runs the
 same rules as Obsidian's plugin review.
 
 Chart.js is bundled into `main.js`. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

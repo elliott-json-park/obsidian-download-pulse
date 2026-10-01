@@ -1,7 +1,7 @@
 {
   "id": "plugin-pulse",
   "name": "Download Pulse",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minAppVersion": "1.13.0",
   "description": "Analytics for authors with several plugins: every plugin's downloads, rank and milestones in one dashboard, daily growth insights, and competitor monitoring, from your share of new downloads to when you pass the one ahead.",
   "author": "Elliott Park",

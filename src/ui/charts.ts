@@ -17,14 +17,25 @@ export interface Palette {
   up: string; down: string; series: string[]; font: string;
 }
 
+const SERIES_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+const SERIES_DARK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
+
+/**
+ * Obsidian may render a view or a code block before it is attached to the page, when none of the
+ * stylesheet's variables resolve yet. Then the theme's own variables on <body> and the built-in
+ * palette stand in, so nothing is drawn black.
+ */
 export function readPalette(el: HTMLElement): Palette {
-  const cs = getComputedStyle(el);
-  const v = (n: string) => cs.getPropertyValue(n).trim();
+  const cs = getComputedStyle(el), body = getComputedStyle(activeDocument.body);
+  const dark = activeDocument.body.hasClass("theme-dark");
+  const v = (n: string, theme: string, fallback = "") => cs.getPropertyValue(n).trim() || body.getPropertyValue(theme).trim() || fallback;
   return {
-    ink1: v("--pp-ink-1"), ink2: v("--pp-ink-2"), ink3: v("--pp-ink-3"), grid: v("--pp-grid"), axis: v("--pp-axis"),
-    surface: v("--pp-surface"), page: v("--pp-page"), up: v("--pp-up"), down: v("--pp-down"),
-    series: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => v(`--pp-s${i}`)),
-    font: cs.fontFamily,
+    ink1: v("--pp-ink-1", "--text-normal", "#222"), ink2: v("--pp-ink-2", "--text-muted", "#5c5c5c"), ink3: v("--pp-ink-3", "--text-faint", "#ababab"),
+    grid: v("--pp-grid", "--background-modifier-border", "#e3e3e3"), axis: v("--pp-axis", "--background-modifier-border-hover", "#c9c9c9"),
+    surface: v("--pp-surface", "--background-primary", "#fff"), page: v("--pp-page", "--background-primary", "#fff"),
+    up: v("--pp-up", "", dark ? "#0ca30c" : "#006300"), down: v("--pp-down", "", dark ? "#e66767" : "#b3261e"),
+    series: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => v(`--pp-s${i}`, "", (dark ? SERIES_DARK : SERIES_LIGHT)[i - 1])),
+    font: cs.fontFamily || body.fontFamily,
   };
 }
 

@@ -49,6 +49,14 @@ export default class PulsePlugin extends Plugin {
       },
     });
 
+    // obsidian://plugin-pulse?view=<plugin id|overview|compare>&mode=rivals&range=90 — link a note to a page of the dashboard.
+    this.registerObsidianProtocolHandler("plugin-pulse", (p) => {
+      const ui = this.settings.ui;
+      if (p.range && ["7", "30", "90", "365", "all"].includes(p.range)) ui.range = p.range as UiState["range"];
+      if (p.glance) void this.openGlance();
+      void this.openDashboard(p.view || undefined, p.mode === "rivals" || p.mode === "self" ? p.mode : undefined);
+    });
+
     this.registerEvent(this.engine.on("changed", () => this.updateStatusBar()));
     const onMotion = () => this.redraw();
     this.reducedMotion.addEventListener("change", onMotion);

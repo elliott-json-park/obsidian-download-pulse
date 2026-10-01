@@ -96,7 +96,15 @@ export class GlanceView extends ItemView {
     this.dot.className = "pp-live-dot" + (s === "ok" || s === "partial" ? " is-on" : s === "offline" ? " is-err" : s === "loading" ? " is-busy" : "");
   }
 
+  /** Drawn while detached (a sidebar restored in the background)? Draw again once it is shown. */
+  private drawnDetached = false;
+
+  onResize(): void {
+    if (this.drawnDetached && this.body?.isConnected) this.draw();
+  }
+
   draw(): void {
+    this.drawnDetached = !this.body.isConnected;
     this.body.empty();
     const mine = this.plugin.settings.mine;
     if (!mine.length) {
