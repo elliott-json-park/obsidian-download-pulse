@@ -63,7 +63,7 @@ export class Engine extends Events {
     try {
       changed = (await this.readOfficial(ids, force, notes)) || changed;
     } catch (e) {
-      console.warn("Plugin Pulse: could not read the official stats", e);
+      console.warn("Download Pulse: could not read the official stats", e);
       this.setStatus("offline", String((e as Error)?.message ?? e));
       return;
     }

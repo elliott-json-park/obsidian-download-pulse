@@ -23,7 +23,7 @@ if (q.get("side") === "none") document.body.classList.add("no-side");
 if (q.get("side") === "only") document.body.classList.add("only-side");
 
 const app = new App();
-const plugin = new PulsePlugin(app, { id: "plugin-pulse", name: "Plugin Pulse", version: "dev" });
+const plugin = new PulsePlugin(app, { id: "plugin-pulse", name: "Download Pulse", version: "dev" });
 window.pulse = plugin;
 await plugin.onload();
 await plugin.openDashboard();
@@ -40,6 +40,14 @@ for (const src of ["", first ? `plugin: ${first}\nrivals: true\ndays: 30` : ""])
 
 // Headless screenshots wait for this: data loaded and every chart built.
 plugin.engine.on("status", (s) => { if (s.state === "ok" || s.state === "partial") setTimeout(() => { document.title = "ready"; }, 2500); });
+// ?scroll=<n> starts the page at its n-th chart card (for screenshots of what is below the fold):
+// everything above it is hidden, so the card is revealed in place instead of by scrolling.
+if (q.has("scroll")) {
+  const n = Number(q.get("scroll"));
+  const style = document.head.appendChild(document.createElement("style"));
+  style.textContent = `#main .pp-hero, #main .pp-insights, #main .pp-tiles { display: none !important; }` +
+    Array.from({ length: n }, (_, i) => `#main .pp-grid > .pp-card:nth-child(${i + 1}) { display: none !important; }`).join("");
+}
 
 document.getElementById("theme").addEventListener("click", () => {
   document.body.classList.toggle("theme-dark");

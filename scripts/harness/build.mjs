@@ -24,6 +24,6 @@ createServer(async (req, res) => {
   if (!file.startsWith(root)) { res.writeHead(403).end(); return; }
   try {
     const body = await readFile(file);
-    res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream", "Cache-Control": "no-store" }).end(body);
+    res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" }).end(body);
   } catch { res.writeHead(404).end("not found"); }
 }).listen(port, () => console.log(`harness on http://localhost:${port}/`));

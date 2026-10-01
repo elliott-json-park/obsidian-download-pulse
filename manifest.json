@@ -1,9 +1,9 @@
 {
   "id": "plugin-pulse",
-  "name": "Plugin Pulse",
-  "version": "1.0.0",
+  "name": "Download Pulse",
+  "version": "1.0.1",
   "minAppVersion": "1.13.0",
-  "description": "Download dashboard for plugin authors. Follow your plugins' daily downloads, rank and milestones, and compare growth with the plugins you compete with.",
+  "description": "Analytics for authors with several plugins: every plugin's downloads, rank and milestones in one dashboard, daily growth insights, and competitor monitoring, from your share of new downloads to when you pass the one ahead.",
   "author": "Elliott Park",
   "authorUrl": "https://github.com/elliott-json-park",
   "fundingUrl": "https://github.com/sponsors/elliott-json-park",

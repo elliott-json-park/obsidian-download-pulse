@@ -1,16 +1,28 @@
-# Plugin Pulse
+# Download Pulse
 
-**A download dashboard for Obsidian plugin authors.** Follow your plugins' daily
-downloads, rank and milestones, and see how they grow next to the plugins you
-compete with: all inside Obsidian.
+**Analytics for Obsidian plugin authors who ship more than one plugin.**
+Every plugin's downloads, rank and milestones in one dashboard, the insights
+worth acting on, and a live watch on the plugins you compete with.
 
 ![The overview: 2,454 downloads across three plugins, an orbit with one planet per plugin, the cumulative chart with a 10-day forecast, and the sidebar widget with each plugin's last two weeks](docs/overview.png)
 
-The community directory shows one number per plugin: total downloads. Plugin
-Pulse keeps that number every day, so you can see the shape behind it. Which
-day was your best. Whether the last release moved anything. How far you are
-from the next milestone. And whether the plugin you're up against is pulling
-away or slowing down.
+The community directory gives you one number per plugin: a lifetime total.
+Once you maintain a few plugins, that number stops answering the questions you
+actually have:
+
+- **Which of my plugins is growing, and which has stalled?** One overview for all of them, plus side-by-side comparison by date or by days since listing.
+- **Did that release move anything?** Downloads in the three days before and after every release, and how each version launched.
+- **Am I gaining on the competition, or falling behind?** Your share of the group's new downloads, the gap to the plugin ahead and the day you'd pass it, and whoever is closing in from behind.
+
+Download Pulse records the official numbers every day and answers those
+questions in plain sentences: *"Driving growth: Vault Pet 43%"*,
+*"Galaxy View is pulling away"*, *"1,500 around Oct 6"*.
+
+### Who it's for
+
+- **Authors with a portfolio.** Five plugins means five numbers to check. Here they're one page, ranked by momentum.
+- **Authors in a crowded niche.** If there are four other graph views or task managers, you want to know who's winning the new users, and why.
+- **Authors about to build.** Follow the leaders of a niche before you write a line, and see if it's growing at all.
 
 ---
 
@@ -84,8 +96,8 @@ An optional status bar item shows your plugins' new downloads on the latest day.
 
 ## Getting started
 
-1. **Install** Plugin Pulse from Settings → Community plugins.
-2. **Open the dashboard** with the pulse icon in the ribbon, or *Plugin Pulse: Open dashboard* in the command palette.
+1. **Install** Download Pulse from Settings → Community plugins.
+2. **Open the dashboard** with the pulse icon in the ribbon, or *Download Pulse: Open dashboard* in the command palette.
 3. **Follow your plugins.** Type your author name or GitHub username and every plugin listed under it is found at once. Or search any plugin by name.
 4. **Add competitors** with *Add competitors* on a plugin's page.
 
@@ -118,13 +130,13 @@ Obsidian publishes every community plugin's total downloads once a day in
 That number counts installs **and updates**, so it isn't a count of users. A
 plugin that ships often collects downloads from its existing users too.
 
-Plugin Pulse reads that file and keeps each day's value in its own data file.
+Download Pulse reads that file and keeps each day's value in its own data file.
 A "day" is the UTC day Obsidian published the file. Forecasts and "around
 Oct 6" estimates assume the last 7 days' pace continues.
 
 ### Network use
 
-Plugin Pulse makes only anonymous `GET` requests for public data, and sends
+Download Pulse makes only anonymous `GET` requests for public data, and sends
 nothing about your vault:
 
 | Request | Why | When |

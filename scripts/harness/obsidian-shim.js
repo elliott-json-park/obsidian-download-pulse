@@ -1,4 +1,4 @@
-// A small stand-in for the `obsidian` module, just enough to run Plugin Pulse in a browser page.
+// A small stand-in for the `obsidian` module, just enough to run Download Pulse in a browser page.
 // Used by the harness (npm run harness) for development and screenshots — never shipped.
 
 // ---------- DOM helpers Obsidian adds to every node ----------

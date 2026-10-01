@@ -6,7 +6,7 @@ import { getLanguage } from "obsidian";
  */
 
 const en = {
-  appName: "Plugin Pulse",
+  appName: "Download Pulse",
   overview: "Overview",
   compare: "Compare",
   self: "Its own",
@@ -153,8 +153,8 @@ const en = {
   pluginsAndReleases: (a: number, b: number) => `${a} · ${b}`,
 
   // states
-  obTitle: "Follow your plugins' downloads",
-  obText: "Pick the plugins to follow. Any plugin in the community directory works: your own, or the ones in a niche you're thinking of building in.",
+  obTitle: "All your plugins, one dashboard",
+  obText: "Enter your author name and every plugin you've published is found at once. Then add the plugins you compete with, and see who's winning the new users. Any listed plugin works, so you can also watch a niche before building in it.",
   obAuthor: "Author name or GitHub username",
   find: "Find",
   foundN: (n: number) => n === 1 ? "1 plugin found" : `${n} plugins found`,
@@ -171,14 +171,14 @@ const en = {
   rivalsNoData: "None of the competitors have data yet.",
 
   // glance & code block
-  glanceTitle: "Plugin Pulse",
+  glanceTitle: "Download Pulse",
   latestShort: "latest day",
   inGroup: (pos: number, n: number) => `#${pos} of ${n} with competitors`,
   nextPass: (name: string, days: number) => `passes ${name} in ~${days}d`,
-  blockUnknown: (id: string) => `Plugin Pulse: "${id}" isn't followed. Add it in the settings first.`,
-  blockEmpty: "Plugin Pulse: no plugins followed yet.",
+  blockUnknown: (id: string) => `Download Pulse: "${id}" isn't followed. Add it in the settings first.`,
+  blockEmpty: "Download Pulse: no plugins followed yet.",
   statusBar: (v: string) => `${v} today`,
-  statusBarTip: "Plugin Pulse — new downloads of your plugins on the latest day",
+  statusBarTip: "Download Pulse — new downloads of your plugins on the latest day",
 
   // commands
   cmdOpen: "Open dashboard",
@@ -204,7 +204,7 @@ const en = {
   followed: (name: string) => `Following ${name}`,
   already: (name: string) => `Already following ${name}`,
   imported: (n: number) => `Imported ${n} readings`,
-  importFailed: "That file isn't a Plugin Pulse export or a dashboard history.json.",
+  importFailed: "That file isn't a Download Pulse export or a dashboard history.json.",
   exported: (path: string) => `Saved ${path}`,
   cleared: "History cleared",
   backfillDone: (n: number) => `Read ${n} days of official history`,
@@ -252,7 +252,7 @@ const en = {
   sClearConfirm: "Click again to clear",
   exportBtn: "Export", importBtn: "Import", clearBtn: "Clear",
   sNetwork: "Network use",
-  sNetworkDesc: "Plugin Pulse reads public data only: Obsidian's stats and directory files on GitHub, GitHub's API for release dates and stars, and, if allowed above, the history archive. It sends nothing about your vault.",
+  sNetworkDesc: "Download Pulse reads public data only: Obsidian's stats and directory files on GitHub, GitHub's API for release dates and stars, and, if allowed above, the history archive. It sends nothing about your vault.",
 
   weekdays: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
   weekdayLong: (d: string) => d,
@@ -265,7 +265,7 @@ const en = {
 type Dict = typeof en;
 
 const ko: Dict = {
-  appName: "Plugin Pulse",
+  appName: "Download Pulse",
   overview: "전체 합계",
   compare: "플러그인 비교",
   self: "단독",
@@ -405,8 +405,8 @@ const ko: Dict = {
   perStar: (n) => `다운로드 ${n}회당 1개`, noneYet: "아직 없음",
   pluginsAndReleases: (a, b) => `${a}개 · ${b}개`,
 
-  obTitle: "내 플러그인의 다운로드를 따라가 보세요",
-  obText: "따라갈 플러그인을 고르세요. 커뮤니티 목록에 있는 플러그인이면 무엇이든 됩니다. 내 플러그인도, 만들어 볼까 하는 분야의 플러그인도요.",
+  obTitle: "내 플러그인 전부를 한 화면에서",
+  obText: "작성자 이름을 넣으면 내가 낸 플러그인을 한 번에 찾습니다. 그다음 경쟁 플러그인을 추가하면 새 사용자를 누가 더 많이 가져가는지 보입니다. 목록에 있는 플러그인이면 무엇이든 되니, 만들기 전에 그 분야를 지켜볼 수도 있습니다.",
   obAuthor: "작성자 이름 또는 GitHub 아이디",
   find: "찾기",
   foundN: (n) => `플러그인 ${n}개`,
@@ -422,14 +422,14 @@ const ko: Dict = {
   noRivalsText: "경쟁하는 플러그인을 추가하면 누가 더 빨리 크는지, 신규 다운로드 중 내 몫은 얼마인지, 앞선 플러그인을 언제 따라잡는지 보여 줍니다.",
   rivalsNoData: "경쟁 플러그인의 데이터가 아직 없습니다.",
 
-  glanceTitle: "Plugin Pulse",
+  glanceTitle: "Download Pulse",
   latestShort: "최근 하루",
   inGroup: (pos, n) => `경쟁 ${n}개 중 ${pos}위`,
   nextPass: (name, days) => `${name} 추월까지 약 ${days}일`,
-  blockUnknown: (id) => `Plugin Pulse: "${id}"를 따라가고 있지 않습니다. 설정에서 먼저 추가하세요.`,
-  blockEmpty: "Plugin Pulse: 아직 따라가는 플러그인이 없습니다.",
+  blockUnknown: (id) => `Download Pulse: "${id}"를 따라가고 있지 않습니다. 설정에서 먼저 추가하세요.`,
+  blockEmpty: "Download Pulse: 아직 따라가는 플러그인이 없습니다.",
   statusBar: (v) => `오늘 ${v}`,
-  statusBarTip: "Plugin Pulse — 최근 하루 내 플러그인 신규 다운로드",
+  statusBarTip: "Download Pulse — 최근 하루 내 플러그인 신규 다운로드",
 
   cmdOpen: "대시보드 열기",
   cmdGlance: "사이드바에 요약 열기",
@@ -452,7 +452,7 @@ const ko: Dict = {
   followed: (name) => `${name} 따라가기 시작`,
   already: (name) => `이미 ${name}을(를) 따라가고 있습니다`,
   imported: (n) => `기록 ${n}개를 가져왔습니다`,
-  importFailed: "Plugin Pulse 내보내기 파일이나 대시보드 history.json이 아닙니다.",
+  importFailed: "Download Pulse 내보내기 파일이나 대시보드 history.json이 아닙니다.",
   exported: (path) => `${path}에 저장했습니다`,
   cleared: "기록을 지웠습니다",
   backfillDone: (n) => `공식 이력 ${n}일치를 읽었습니다`,
@@ -499,7 +499,7 @@ const ko: Dict = {
   sClearConfirm: "한 번 더 누르면 지웁니다",
   exportBtn: "내보내기", importBtn: "가져오기", clearBtn: "지우기",
   sNetwork: "네트워크 사용",
-  sNetworkDesc: "Plugin Pulse는 공개 데이터만 읽습니다: GitHub에 있는 옵시디언 공식 통계·목록 파일, 릴리즈 날짜와 별 수를 위한 GitHub API, 위에서 허용했다면 이력 아카이브. 볼트에 관한 정보는 아무것도 보내지 않습니다.",
+  sNetworkDesc: "Download Pulse는 공개 데이터만 읽습니다: GitHub에 있는 옵시디언 공식 통계·목록 파일, 릴리즈 날짜와 별 수를 위한 GitHub API, 위에서 허용했다면 이력 아카이브. 볼트에 관한 정보는 아무것도 보내지 않습니다.",
 
   weekdays: ["월", "화", "수", "목", "금", "토", "일"],
   weekdayLong: (d) => `${d}요일`,

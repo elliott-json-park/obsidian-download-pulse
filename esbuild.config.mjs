@@ -3,7 +3,7 @@ import process from "node:process";
 import { builtinModules } from "node:module";
 
 const banner = `/*
- * Plugin Pulse — bundled by esbuild. Do not edit main.js directly; the source is in src/.
+ * Download Pulse — bundled by esbuild. Do not edit main.js directly; the source is in src/.
  * Bundles Chart.js (MIT, https://www.chartjs.org) — see THIRD-PARTY-NOTICES.md.
  */
 `;

@@ -118,7 +118,7 @@ export class PulseSettingTab extends PluginSettingTab {
     let armed = false;
     const data: Row[] = [
       { name: t().sExport, desc: t().sExportDesc, render: (row) => row.addButton((b) => b.setButtonText(t().exportBtn).onClick(async () => {
-        const path = normalizePath(`Plugin Pulse export ${new Date().toISOString().slice(0, 10)}.json`);
+        const path = normalizePath(`Download Pulse export ${new Date().toISOString().slice(0, 10)}.json`);
         const body = JSON.stringify({ format: "plugin-pulse", version: 1, store: plugin.store }, null, 1);
         const existing = this.app.vault.getFileByPath(path);
         if (existing) await this.app.vault.modify(existing, body); else await this.app.vault.create(path, body);
