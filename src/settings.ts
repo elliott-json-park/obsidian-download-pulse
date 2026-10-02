@@ -64,7 +64,7 @@ export class PulseSettingTab extends PluginSettingTab {
 
     const updates: Row[] = [
       { name: t().sInterval, desc: t().sIntervalDesc, render: (row) => row.addDropdown((d) => {
-        for (const m of [0, 30, 60, 180, 360]) d.addOption(String(m), t().every(m));
+        for (const m of [0, 15, 30, 60, 180, 360]) d.addOption(String(m), t().every(m));
         d.setValue(String(s.refreshMinutes)).onChange(async (v) => { s.refreshMinutes = +v; await plugin.saveSettings(); plugin.schedule(); });
       }) },
       { name: t().sArchive, desc: t().sArchiveDesc, render: (row) => row.addToggle((tg) => tg.setValue(s.useArchive).onChange(async (v) => {

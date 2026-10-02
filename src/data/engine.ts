@@ -49,6 +49,12 @@ export class Engine extends Events {
 
   get busy(): boolean { return this.running != null; }
 
+  /** Cheap catch-up for moments the user is looking: a refresh unless one ran in the last few minutes. */
+  refreshIfStale(maxAgeMs = 5 * 60e3): Promise<void> {
+    if (this.running || Date.now() - this.store.lastChecked < maxAgeMs) return this.running ?? Promise.resolve();
+    return this.refresh();
+  }
+
   private setStatus(state: StatusState, detail?: string) {
     this.status = { state, at: state === "loading" ? this.status.at : Date.now(), detail };
     this.trigger("status", this.status);
@@ -91,7 +97,7 @@ export class Engine extends Events {
 
     if (!commits?.length) {
       // GitHub's API is unavailable (usually its hourly limit): read the file directly and date it today.
-      if (!force && this.latest && Date.now() - this.store.lastChecked < 30 * 60e3) return false;
+      if (!force && this.latest && Date.now() - this.store.lastChecked < 10 * 60e3) return false;
       const stats = await fetchStats();
       const sorted = sortedDownloads(stats);
       const moved = ids.some((id) => stats[id] && this.latestDownloads(id) !== stats[id].downloads);

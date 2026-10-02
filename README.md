@@ -118,7 +118,7 @@ you build in it, or watch a plugin you depend on.
 ### Settings
 
 - **Your plugins**: reorder, remove, and edit each one's competitors.
-- **Check for new stats**: every 30 minutes to 6 hours, or only when you refresh.
+- **Check for new stats**: every 15 minutes to 6 hours (30 minutes by default). It also checks when you open the dashboard or return to Obsidian, or only when you refresh.
 - **Fill in past history**, **Catch up on missed days**, **Read official history**: see below.
 - **GitHub token**: optional, for release dates and stars beyond GitHub's anonymous limit.
 - **Motion**, **Status bar**, **Milestone notices**, **Language** (English, 한국어).
@@ -144,7 +144,7 @@ nothing about your vault:
 
 | Request | Why | When |
 |---|---|---|
-| `api.github.com/repos/obsidianmd/obsidian-releases/commits` | Has a new stats file been published? One small call. | Each check (hourly by default) |
+| `api.github.com/repos/obsidianmd/obsidian-releases/commits` | Has a new stats file been published? One small call. | Each check (every 30 minutes by default, when you open the dashboard, and when you return to Obsidian; at most once per 5 minutes) |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/…/community-plugin-stats.json` | The official numbers, about 2.5 MB | Only when Obsidian has published a new file, about once a day |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugins.json` | Plugin names, authors and repos for search and suggestions | When you search or add competitors |
 | `api.github.com/repos/<owner>/<repo>` and `…/releases` | Stars and release dates of followed plugins | At most twice a day per plugin |
