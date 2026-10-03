@@ -84,7 +84,8 @@ export class Tip {
     this.clean = () => { win.removeEventListener("scroll", this.follow, true); win.removeEventListener("resize", this.follow); };
   }
 
-  disconnect(): void { this.clean?.(); this.clean = null; }
+  /** Detaches the listeners and removes the body-mounted tooltip, which the view's own teardown would not reach. */
+  disconnect(): void { this.clean?.(); this.clean = null; this.anchor = null; this.el.remove(); }
 
   bind(el: HTMLElement, text: string, focusable = true): HTMLElement {
     this.texts.set(el, text);
