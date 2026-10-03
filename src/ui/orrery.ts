@@ -27,7 +27,7 @@ export class Orrery {
       this.hover = this.hit(e);
       cv.toggleClass("is-pointing", !!this.hover);
       const h = this.hover;
-      if (h) this.tip.show(`**${h.name}** ${fmt(h.total)}\n${t().latestShort} ${signed(h.daily)}` + (h.rank ? ` · ${t().rankChip(fmt(h.rank))}` : ""), e.clientX, e.clientY);
+      if (h) this.tip.show(`**${h.name}** ${fmt(h.total)}\n${t().latestShort} ${signed(h.daily)}` + (h.rank ? ` · ${t().rankChip(fmt(h.rank))}` : ""), e.clientX, e.clientY, cv);
       else this.tip.hide();
       if (!this.motion()) this.draw(0);
     });

@@ -162,9 +162,13 @@ export class Model {
     const start = this.store.vstart[id];
     const lastDate = this.latest(id)?.date;
     return Object.entries(log).map(([version, e]) => {
+      const known = !!start && e.first > start;
       const days = lastDate ? Math.min(3, dayDiff(e.first, lastDate) + 1) : 1;
       const c = e.c.slice(0, days).filter((x): x is number => x != null);
-      return { version, first: e.first, total: e.total, first3: c.length ? c[c.length - 1] : e.total, partial: days < 3, known: !!start && e.first > start, days };
+      // A version watched from its launch shows the count it had after its first 3 days;
+      // one already out when tracking started shows the downloads it gained over its first 3 observed days.
+      const first3 = c.length ? (known ? c[c.length - 1] : c[c.length - 1] - c[0]) : e.total;
+      return { version, first: e.first, total: e.total, first3, partial: days < 3, known, days };
     }).sort((a, b) => semverCmp(a.version, b.version));
   }
 
