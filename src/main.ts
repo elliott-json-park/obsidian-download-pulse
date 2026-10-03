@@ -62,6 +62,11 @@ export default class PulsePlugin extends Plugin {
     this.reducedMotion.addEventListener("change", onMotion);
     this.register(() => this.reducedMotion.removeEventListener("change", onMotion));
 
+    // Coming back to Obsidian (or to its window) is when someone looks at the numbers: catch up then, not an hour later.
+    const catchUp = () => { if (!document.hidden && this.settings.mine.length) void this.engine.refreshIfStale(); };
+    this.registerDomEvent(window, "focus", catchUp);
+    this.registerDomEvent(document, "visibilitychange", catchUp);
+
     this.app.workspace.onLayoutReady(() => {
       this.updateStatusBar();
       this.schedule();

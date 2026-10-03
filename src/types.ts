@@ -99,7 +99,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mine: [],
   competitors: {},
   meta: {},
-  refreshMinutes: 60,
+  refreshMinutes: 30,
   useArchive: true,
   catchUp: true,
   githubSecret: "",

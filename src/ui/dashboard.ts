@@ -101,7 +101,7 @@ export class DashboardView extends ItemView {
     this.applyMotion();
     this.showStatus();
     this.render();
-    if (this.plugin.engine.status.state === "idle") void this.plugin.engine.refresh();
+    void this.plugin.engine.refreshIfStale();
   }
 
   async onClose(): Promise<void> {

@@ -4,7 +4,7 @@
 Every plugin's downloads, rank and milestones in one dashboard, the insights
 worth acting on, and a live watch on the plugins you compete with.
 
-![Download Pulse in Obsidian: the dashboard tab shows 2,454 downloads across three plugins, an orbit with one planet per plugin and insight cards, and the right sidebar widget shows each plugin's latest day and last two weeks](https://raw.githubusercontent.com/elliott-json-park/obsidian-plugin-pulse/main/docs/obsidian/1-overview.png)
+![Download Pulse in Obsidian: the dashboard tab shows 2,454 downloads across three plugins, an orbit with one planet per plugin and insight cards, and the right sidebar widget shows each plugin's latest day and last two weeks](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/obsidian/1-overview.png)
 
 The community directory gives you one number per plugin: a lifetime total.
 Once you maintain a few plugins, that number stops answering the questions you
@@ -46,7 +46,7 @@ suggests similar ones from the directory) and switch a plugin's page to
 - **At the same age**: everyone's total on the same day after listing.
 - **Release pace**: how often you ship compared with the group.
 
-![Vault Orrery against four 3D-graph plugins in Obsidian: #2 of 5, 23.6% of the group's new downloads this week, Galaxy View pulling away, no one behind gaining, and a card per plugin with its last 30 days](https://raw.githubusercontent.com/elliott-json-park/obsidian-plugin-pulse/main/docs/obsidian/2-competitors.png)
+![Vault Orrery against four 3D-graph plugins in Obsidian: #2 of 5, 23.6% of the group's new downloads this week, Galaxy View pulling away, no one behind gaining, and a card per plugin with its last 30 days](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/obsidian/2-competitors.png)
 
 Plugins of very different sizes switch the cumulative chart to a log scale on
 their own, so a plugin with 600 downloads isn't a flat line under one with 11,000.
@@ -55,7 +55,7 @@ their own, so a plugin with 600 downloads isn't a flat line under one with 11,00
 fonts, and keeps a deliberately quiet look: one big number, hairlines, and
 color only where it means a plugin.
 
-![One plugin's page: total, best day, overall rank, the latest release's effect, and daily downloads with release markers](https://raw.githubusercontent.com/elliott-json-park/obsidian-plugin-pulse/main/docs/obsidian/3-plugin.png)
+![One plugin's page: total, best day, overall rank, the latest release's effect, and daily downloads with release markers](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/obsidian/3-plugin.png)
 
 ---
 
@@ -86,7 +86,7 @@ days: 30
 - `rivals: true` — the plugin and its competitors, one card each.
 - `days:` — how many days of bars, 7 to 60. Default: 14.
 
-![A plugin's note with a plugin-pulse code block comparing it with its competitors, next to the sidebar widget](https://raw.githubusercontent.com/elliott-json-park/obsidian-plugin-pulse/main/docs/obsidian/5-note.png)
+![A plugin's note with a plugin-pulse code block comparing it with its competitors, next to the sidebar widget](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/obsidian/5-note.png)
 
 **Links into the dashboard.** `obsidian://plugin-pulse?view=vault-orrery&mode=rivals`
 opens a page of the dashboard from anywhere: a note, a bookmark, a launcher.
@@ -118,7 +118,7 @@ you build in it, or watch a plugin you depend on.
 ### Settings
 
 - **Your plugins**: reorder, remove, and edit each one's competitors.
-- **Check for new stats**: every 30 minutes to 6 hours, or only when you refresh.
+- **Check for new stats**: every 15 minutes to 6 hours (30 minutes by default). It also checks when you open the dashboard or return to Obsidian, or only when you refresh.
 - **Fill in past history**, **Catch up on missed days**, **Read official history**: see below.
 - **GitHub token**: optional, for release dates and stars beyond GitHub's anonymous limit.
 - **Motion**, **Status bar**, **Milestone notices**, **Language** (English, 한국어).
@@ -144,7 +144,7 @@ nothing about your vault:
 
 | Request | Why | When |
 |---|---|---|
-| `api.github.com/repos/obsidianmd/obsidian-releases/commits` | Has a new stats file been published? One small call. | Each check (hourly by default) |
+| `api.github.com/repos/obsidianmd/obsidian-releases/commits` | Has a new stats file been published? One small call. | Each check (every 30 minutes by default, when you open the dashboard, and when you return to Obsidian; at most once per 5 minutes) |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/…/community-plugin-stats.json` | The official numbers, about 2.5 MB | Only when Obsidian has published a new file, about once a day |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugins.json` | Plugin names, authors and repos for search and suggestions | When you search or add competitors |
 | `api.github.com/repos/<owner>/<repo>` and `…/releases` | Stars and release dates of followed plugins | At most twice a day per plugin |
