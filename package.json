@@ -1,7 +1,7 @@
 {
   "name": "plugin-pulse",
-  "version": "1.0.5",
-  "description": "Analytics for authors with several plugins: every plugin's downloads, rank and milestones in one dashboard, daily growth insights, and competitor monitoring, from your share of new downloads to when you pass the one ahead.",
+  "version": "1.1.0",
+  "description": "Analytics for authors with several plugins: every plugin's downloads, rank and milestones in one dashboard, daily growth insights, competitor monitoring, and a card of your numbers to share in posts and stories.",
   "main": "main.js",
   "//": "No \"type\": \"module\" — Obsidian loads main.js as CommonJS. Build scripts use .mjs instead.",
   "scripts": {

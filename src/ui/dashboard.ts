@@ -77,6 +77,7 @@ export class DashboardView extends ItemView {
       void this.plugin.saveSettings();
       this.applyMotion(); this.render();
     });
+    btn("image", t().share, () => this.plugin.openShare());
     btn("settings", t().settings, () => this.plugin.openSettings());
 
     const controls = wrap.createDiv({ cls: "pp-controls" });

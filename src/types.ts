@@ -49,6 +49,13 @@ export interface UiState {
   mode: "self" | "rivals";
 }
 
+/** The last choices in the share card dialog. */
+export interface ShareOpts {
+  format: "wide" | "story";
+  theme: "light" | "dark";
+  days: 7 | 30 | 90;
+}
+
 export interface Settings {
   /** Plugins whose growth you follow. Usually your own; any listed plugin works. */
   mine: string[];
@@ -66,6 +73,7 @@ export interface Settings {
   milestoneNotices: boolean;
   language: "auto" | "en" | "ko";
   ui: UiState;
+  share: ShareOpts;
 }
 
 export interface Store {
@@ -108,6 +116,7 @@ export const DEFAULT_SETTINGS: Settings = {
   milestoneNotices: true,
   language: "auto",
   ui: { view: "overview", range: "30", align: "date", mode: "self" },
+  share: { format: "wide", theme: "light", days: 30 },
 };
 
 export const emptyStore = (): Store => ({

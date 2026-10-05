@@ -2,10 +2,10 @@
   "id": "plugin-pulse",
   "name": "Download Pulse",
   "minAppVersion": "1.13.0",
-  "description": "Analytics for authors with several plugins: every plugin's downloads, rank and milestones in one dashboard, daily growth insights, and competitor monitoring, from your share of new downloads to when you pass the one ahead.",
+  "description": "Analytics for authors with several plugins: every plugin's downloads, rank and milestones in one dashboard, daily growth insights, competitor monitoring, and a card of your numbers to share in posts and stories.",
   "author": "Elliott Park",
   "authorUrl": "https://github.com/elliott-json-park",
   "fundingUrl": "https://github.com/sponsors/elliott-json-park",
   "isDesktopOnly": false,
-  "version": "1.0.5"
+  "version": "1.1.0"
 }

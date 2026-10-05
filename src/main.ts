@@ -7,6 +7,7 @@ import { PulseSettingTab } from "./settings";
 import { DashboardView, DASHBOARD_VIEW } from "./ui/dashboard";
 import { GlanceView, GLANCE_VIEW, PulseBlock } from "./ui/glance";
 import { CompetitorsModal, PickMineModal, PluginSearchModal } from "./ui/modals";
+import { ShareModal } from "./ui/share";
 import { Model } from "./analysis";
 import { fmt, signed } from "./ui/util";
 
@@ -20,7 +21,11 @@ export default class PulsePlugin extends Plugin {
 
   async onload(): Promise<void> {
     const data = (await this.loadData()) as Partial<PluginData> | null;
-    this.settings = { ...DEFAULT_SETTINGS, ...data?.settings, ui: { ...DEFAULT_SETTINGS.ui, ...data?.settings?.ui } };
+    this.settings = {
+      ...DEFAULT_SETTINGS, ...data?.settings,
+      ui: { ...DEFAULT_SETTINGS.ui, ...data?.settings?.ui },
+      share: { ...DEFAULT_SETTINGS.share, ...data?.settings?.share },
+    };
     this.store = { ...emptyStore(), ...data?.store };
     setLanguage(this.settings.language);
 
@@ -36,6 +41,14 @@ export default class PulsePlugin extends Plugin {
     this.addCommand({ id: "open-glance", name: t().cmdGlance, callback: () => void this.openGlance() });
     this.addCommand({ id: "refresh", name: t().cmdRefresh, callback: () => void this.engine.refresh(true) });
     this.addCommand({ id: "follow-plugin", name: t().cmdAdd, callback: () => this.openFollow() });
+    this.addCommand({
+      id: "share-card", name: t().cmdShare,
+      checkCallback: (checking) => {
+        if (!this.settings.mine.length) return false;
+        if (!checking) this.openShare();
+        return true;
+      },
+    });
     this.addCommand({
       id: "add-competitor", name: t().cmdRival,
       checkCallback: (checking) => {
@@ -83,8 +96,13 @@ export default class PulsePlugin extends Plugin {
   token(): string | undefined {
     return this.settings.githubSecret ? this.app.secretStorage.getSecret(this.settings.githubSecret) ?? undefined : undefined;
   }
+  /** The moment worth posting, so the notice carries a way to share it. */
   celebrate(id: string, milestone: number): void {
-    new Notice(t().celebrate(this.settings.meta[id]?.name ?? id, fmt(milestone)), 8000);
+    const msg = createFragment();
+    msg.appendText(t().celebrate(this.settings.meta[id]?.name ?? id, fmt(milestone)) + " ");
+    const link = msg.createEl("a", { text: t().shareIt, href: "#" });
+    link.addEventListener("click", (e) => { e.preventDefault(); this.openShare(); });
+    new Notice(msg, 12000);
   }
 
   async saveSettings(): Promise<void> {
@@ -148,6 +166,10 @@ export default class PulsePlugin extends Plugin {
 
   openFollow(): void {
     new PluginSearchModal(this.app, this, new Set(this.settings.mine), (p) => void this.follow([p]).then(() => this.openDashboard(p.id))).open();
+  }
+
+  openShare(): void {
+    new ShareModal(this.app, this).open();
   }
 
   openCompetitors(id: string, onDone?: () => void): void {

@@ -34,6 +34,7 @@ window.activeDocument = document;
 window.activeWindow = window;
 window.createSvg = (tag, o, cb) => { const el = document.createElementNS("http://www.w3.org/2000/svg", tag); applyOpts(el, o); cb?.(el); return el; };
 window.createEl = (tag, o, cb) => { const el = document.createElement(tag); applyOpts(el, o); cb?.(el); return el; };
+window.createFragment = (cb) => { const f = document.createDocumentFragment(); cb?.(f); return f; };
 window.createDiv = (o, cb) => { const el = document.createElement("div"); applyOpts(el, o); cb?.(el); return el; };
 
 // ---------- icons ----------
@@ -44,6 +45,7 @@ const ICONS = {
   plus: "M12 5v14M5 12h14", x: "M18 6 6 18M6 6l12 12", trash: "M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6",
   "arrow-up": "M12 19V5M5 12l7-7 7 7", activity: "M22 12h-4l-3 9L9 3l-3 9H2",
   "layout-dashboard": "M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z",
+  image: "M3 5h18v14H3zM8.5 10.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM21 15l-5-5L5 19",
 };
 export function setIcon(el, name) {
   el.empty();
@@ -92,9 +94,12 @@ export async function requestUrl(req) {
   return { status: res.status, text, json, headers: {} };
 }
 
+export class TFile {}
+
 export class Notice {
   constructor(msg, timeout = 4000) {
-    this.el = document.getElementById("notices").createDiv({ cls: "notice", text: msg });
+    this.el = document.getElementById("notices").createDiv({ cls: "notice" });
+    if (typeof msg === "string") this.el.setText(msg); else this.el.appendChild(msg);
     if (timeout) setTimeout(() => this.hide(), timeout);
   }
   setMessage(m) { this.el.setText(m); return this; }
@@ -252,6 +257,7 @@ export class Plugin extends Component {
   registerMarkdownCodeBlockProcessor(lang, fn) { this.app.codeBlocks[lang] = fn; }
   addSettingTab(tab) { this.app.settingTab = tab; }
   addRibbonIcon(icon, title, cb) { const b = document.getElementById("ribbon").createEl("button", { cls: "clickable-icon", attr: { "aria-label": title } }); setIcon(b, icon); b.addEventListener("click", cb); return b; }
+  registerObsidianProtocolHandler() {}
   addCommand(c) { this.app.commands.push(c); return c; }
   addStatusBarItem() { return document.getElementById("statusbar").createDiv({ cls: "status-bar-item" }); }
 }
@@ -261,7 +267,9 @@ export class App {
     this.workspace = new Workspace(this);
     this.codeBlocks = {}; this.commands = [];
     this.secretStorage = { getSecret: () => null };
-    this.vault = { getFileByPath: () => null, create: async (p, body) => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([body])); a.download = p; a.click(); }, modify: async () => {} };
+    const download = (p, body) => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([body])); a.download = p; a.click(); };
+    this.vault = { getFileByPath: () => null, getAbstractFileByPath: () => null, create: async (p, body) => download(p, body), createBinary: async (p, body) => download(p, body), modify: async () => {} };
+    this.fileManager = { getAvailablePathForAttachment: async (name) => name };
     this.setting = {
       open: () => {
         const m = new Modal(this); m.modalEl.addClass("mod-settings");

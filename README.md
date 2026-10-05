@@ -2,7 +2,8 @@
 
 **Analytics for Obsidian plugin authors who ship more than one plugin.**
 Every plugin's downloads, rank and milestones in one dashboard, the insights
-worth acting on, and a live watch on the plugins you compete with.
+worth acting on, and a live watch on the plugins you compete with. When
+there's something to celebrate, share it as an image card for a post or a story.
 
 ![Download Pulse in Obsidian: the dashboard tab shows 2,454 downloads across three plugins, an orbit with one planet per plugin and insight cards, and the right sidebar widget shows each plugin's latest day and last two weeks](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/obsidian/1-overview.png)
 
@@ -56,6 +57,26 @@ fonts, and keeps a deliberately quiet look: one big number, hairlines, and
 color only where it means a plugin.
 
 ![One plugin's page: total, best day, overall rank, the latest release's effect, and daily downloads with release markers](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/obsidian/3-plugin.png)
+
+---
+
+## Share your numbers
+
+Passed 1,000 downloads, or had your best month yet? Turn it into an image
+card and post it. The card shows your plugins' total, what they gained in the
+last 7, 30 or 90 days, and one line per plugin: its last days as a line, its
+total, its gain and where it ranks among all community plugins.
+
+![The share card in its two shapes: a 16:9 post card and a 9:16 story card, each with 3,538 total downloads across three plugins and a line per plugin](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/share-card.png)
+
+- **Post 16:9**: 1200×675, saved at twice the size. For X, Discord, Reddit and the forum.
+- **Story 9:16**: 1080×1920 for Instagram and other stories. The top and bottom are left clear for the story's own buttons.
+- **Light or dark**, whatever your Obsidian theme is.
+- **Copy image** to paste it straight into a post or a message, or **Save to vault** to keep it as a PNG in your attachment folder.
+
+Open it with the image button at the top of the dashboard, *Share a card of
+your plugins* in the command palette, or *Share* on a milestone notice. The
+card is drawn on your device and nothing is uploaded until you post it.
 
 ---
 
@@ -113,7 +134,7 @@ you build in it, or watch a plugin you depend on.
 
 ### Commands
 
-*Open dashboard* · *Open glance in the sidebar* · *Refresh now* · *Follow a plugin* · *Add a competitor*
+*Open dashboard* · *Open glance in the sidebar* · *Refresh now* · *Follow a plugin* · *Add a competitor* · *Share a card of your plugins*
 
 ### Settings
 
