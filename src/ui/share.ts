@@ -1,11 +1,11 @@
-import { App, Modal, Notice, TFile, normalizePath } from "obsidian";
+import { App, Modal, Notice, Platform, TFile, normalizePath } from "obsidian";
 import type PulsePlugin from "../main";
 import { Model } from "../analysis";
 import { addDays } from "../data/store";
 import { t } from "../i18n";
 import type { ShareOpts } from "../types";
 import { SERIES_DARK, SERIES_LIGHT } from "./charts";
-import { fmt, fmt1, signed } from "./util";
+import { alpha, fmt, fmt1, signed } from "./util";
 
 /*
  * A card of your plugins to post elsewhere: one big total, a line per plugin, and the app's name at the foot.
@@ -24,8 +24,8 @@ export interface CardData {
   gain: number;
   days: number;
   rows: Row[];
-  /** Plugins left off the card for space: how many, and their downloads together. */
-  more: { n: number; total: number } | null;
+  /** Plugins left off the card for space: how many, their downloads together, and their daily sum for the chart. */
+  more: { n: number; total: number; daily: (number | null)[] } | null;
 }
 
 const INK = {
@@ -62,7 +62,10 @@ export function cardData(plugin: PulsePlugin, days: number, max: number): CardDa
     gain: rows.reduce((n, r) => n + (r.gain ?? 0), 0),
     days,
     rows: shown.map(({ i, ...r }) => ({ ...r, slot: i })),
-    more: rest.length ? { n: rest.length, total: rest.reduce((n, r) => n + r.total, 0) } : null,
+    more: rest.length ? {
+      n: rest.length, total: rest.reduce((n, r) => n + r.total, 0),
+      daily: rest[0].daily.map((_, k) => rest.some((r) => r.daily[k] != null) ? rest.reduce((n, r) => n + (r.daily[k] ?? 0), 0) : null),
+    } : null,
   };
 }
 
@@ -133,12 +136,123 @@ function spark(ctx: Ctx, values: (number | null)[], x: number, y: number, w: num
 
 const topText = (p: number | null) => p == null ? "" : t().cardTop(p < 1 ? fmt1(p) : fmt(Math.max(1, Math.round(p))));
 
-function gainParts(d: CardData, k: Ink) {
-  const [pre, post] = t().cardGain(d.days);
-  return [{ s: pre, color: k.mute }, { s: signed(d.gain), color: k.up, weight: 600 }, { s: post, color: k.mute }];
+function cardDate(d: string) { return t().cardDate(+d.slice(0, 4), +d.slice(5, 7), +d.slice(8, 10)); }
+
+/** Width of `s` in the given font. Leaves that font set. */
+function measure(ctx: Ctx, s: string, size: number, weight: number, family: string, tracking = 0): number {
+  font(ctx, size, weight, family, tracking);
+  return ctx.measureText(s).width;
 }
 
-function cardDate(d: string) { return t().cardDate(+d.slice(0, 4), +d.slice(5, 7), +d.slice(8, 10)); }
+/** The largest size, from `size` down to half of it, at which `s` fits in `max` pixels. Leaves that font set. */
+function fitSize(ctx: Ctx, s: string, max: number, size: number, weight: number, family: string, tracking = 0): number {
+  let z = size;
+  while (z > size / 2 && measure(ctx, s, z, weight, family, tracking) > max) z -= 2;
+  return z;
+}
+
+/** Letter spacing for small labels: spaced capitals in Latin; Hangul reads better without. */
+const tracking = (s: string) => /[ㄱ-힝]/.test(s) ? 0 : 0.06;
+
+/** A small label in spaced capitals. */
+function label(ctx: Ctx, s: string, x: number, y: number, size: number, color: string, family: string, align: CanvasTextAlign = "left") {
+  font(ctx, size, 600, family, tracking(s));
+  text(ctx, s.toUpperCase(), x, y, color, align);
+  font(ctx, size, 600, family);
+}
+
+/** The app's mark: a rounded square with a pulse line. `y` is its top. */
+function mark(ctx: Ctx, x: number, y: number, s: number, k: Ink) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, s, s, s * 0.26);
+  ctx.fillStyle = k.ink;
+  ctx.fill();
+  const p = (u: number, v: number): [number, number] => [x + u * s, y + v * s];
+  ctx.beginPath();
+  ctx.moveTo(...p(0.16, 0.55));
+  for (const [u, v] of [[0.36, 0.55], [0.45, 0.28], [0.57, 0.76], [0.66, 0.48], [0.84, 0.48]]) ctx.lineTo(...p(u, v));
+  ctx.strokeStyle = k.page;
+  ctx.lineWidth = s * 0.09;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.stroke();
+}
+
+/** Author in bold and the plugin count, cut to `max` pixels. */
+function byline(ctx: Ctx, d: CardData, k: Ink, f: string, x: number, y: number, size: number, max: number) {
+  const count = t().cardPlugins(d.count);
+  if (!d.author) { font(ctx, size, 400, f); text(ctx, fit(ctx, count, max), x, y, k.mute); return; }
+  const tail = " · " + count;
+  const tw = measure(ctx, tail, size, 400, f);
+  font(ctx, size, 600, f);
+  const author = fit(ctx, d.author, Math.max(max - tw, max * 0.6));
+  text(ctx, author, x, y, k.ink);
+  const aw = ctx.measureText(author).width;
+  font(ctx, size, 400, f);
+  text(ctx, fit(ctx, tail, max - aw), x + aw, y, k.mute);
+}
+
+/** The period's gain in a tinted pill: "+2,300 last 30 days". `y` is its top. Returns its height. */
+function gainChip(ctx: Ctx, d: CardData, k: Ink, f: string, x: number, y: number, size: number, max: number): number {
+  const h = Math.round(size * 1.9), pad = Math.round(size * 0.75);
+  const gain = signed(d.gain), period = " " + t().cardPeriod(d.days);
+  const gw = measure(ctx, gain, size, 700, f), pw = measure(ctx, period, size, 400, f);
+  const w = Math.min(max, gw + pw + pad * 2);
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, h / 2);
+  ctx.fillStyle = alpha(k.up, 0.12);
+  ctx.fill();
+  const base = y + h / 2 + size * 0.36;
+  font(ctx, size, 700, f);
+  text(ctx, gain, x + pad, base, k.up);
+  font(ctx, size, 400, f);
+  text(ctx, fit(ctx, period, w - pad * 2 - gw), x + pad + gw, base, k.ink);
+  return h;
+}
+
+/** Every plugin's daily new downloads, stacked in its color; the ones left off the card on top in grey. Missed days stay empty. */
+function stackedBars(ctx: Ctx, rows: Pick<Drawn, "daily" | "color">[], x: number, y: number, w: number, h: number, k: Ink, lw: number) {
+  const n = rows[0]?.daily.length ?? 0;
+  const sums = Array.from({ length: n }, (_, i) => rows.reduce((s, r) => s + Math.max(0, r.daily[i] ?? 0), 0));
+  const max = Math.max(1, ...sums);
+  const step = w / Math.max(1, n), bw = Math.max(1.5, step * (n > 45 ? 0.72 : 0.6));
+  for (let i = 0; i < n; i++) {
+    let top = y + h;
+    for (const r of rows) {
+      const v = Math.max(0, r.daily[i] ?? 0);
+      if (!v) continue;
+      const bh = v / max * h;
+      ctx.fillStyle = r.color;
+      ctx.fillRect(x + i * step + (step - bw) / 2, top - bh, bw, bh);
+      top -= bh;
+    }
+  }
+  hairline(ctx, x, x + w, y + h + lw / 2, k.line, lw);
+}
+
+/** The daily chart with its caption above: what it shows on the left, the busiest day on the right. `y` is the caption's baseline. */
+function dailyBlock(ctx: Ctx, d: CardData, shown: Drawn[], k: Ink, f: string, x: number, y: number, w: number, h: number, size: number, lw: number) {
+  const rows: Pick<Drawn, "daily" | "color">[] = d.more ? [...shown, { daily: d.more.daily, color: k.ring }] : shown;
+  const n = rows[0]?.daily.length ?? 0;
+  const peak = Math.max(0, ...Array.from({ length: n }, (_, i) => rows.reduce((s, r) => s + Math.max(0, r.daily[i] ?? 0), 0)));
+  const pk = t().cardPeak(signed(peak)), pw = measure(ctx, pk, size, 400, f);
+  text(ctx, pk, x + w, y, k.mute, "right");
+  font(ctx, size, 600, f, tracking(t().cardDaily));
+  label(ctx, fit(ctx, t().cardDaily.toUpperCase(), w - pw - 24), x, y, size, k.mute, f);
+  stackedBars(ctx, rows, x, y + size, w, h - size, k, lw);
+}
+
+/** The app's name, and where the numbers come from: beside it, or below it on a narrow card. */
+function footer(ctx: Ctx, k: Ink, f: string, L: number, R: number, y: number, size: number, stacked: boolean, lw: number) {
+  hairline(ctx, L, R, y, k.ink, lw);
+  const made = [{ s: t().cardMadePre, color: k.mute }, { s: t().appName, color: k.ink, weight: 600 }, { s: t().cardMadePost, color: k.mute }];
+  const end = runs(ctx, made, L, y + size * 2.1, size, f);
+  font(ctx, size, 400, f);
+  if (stacked) text(ctx, fit(ctx, t().cardSource, R - L), L, y + size * 3.7, k.mute);
+  else text(ctx, fit(ctx, t().cardSource, R - end - GAP), R, y + size * 2.1, k.mute, "right");
+}
+
+const GAP = 32;
 
 /** Draws the card onto `canvas`, sizing it for the format. */
 export function drawCard(canvas: HTMLCanvasElement, d: CardData, opts: ShareOpts, family: string): void {
@@ -157,105 +271,133 @@ export function drawCard(canvas: HTMLCanvasElement, d: CardData, opts: ShareOpts
   if (story) drawStory(ctx, d, rows, k, family); else drawWide(ctx, d, rows, k, family);
 }
 
+/** 16:9. Header, the total beside the daily chart, then a table whose columns are as wide as their widest value. */
 function drawWide(ctx: Ctx, d: CardData, rows: Drawn[], k: Ink, f: string) {
   const L = 64, R = 1136;
-  // header
-  dot(ctx, L + 8, 70, 6, k.ink);
-  ctx.strokeStyle = k.ring; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(L + 8, 70, 11.5, 0, Math.PI * 2); ctx.stroke();
-  runs(ctx, [{ s: d.author ?? "", color: k.ink, weight: 600 }, { s: (d.author ? " · " : "") + t().cardPlugins(d.count), color: k.mute }], L + 36, 77, 20, f);
-  font(ctx, 20, 400, f);
-  text(ctx, cardDate(d.date), R, 77, k.mute, "right");
+  mark(ctx, L, 48, 30, k);
+  const date = cardDate(d.date), dw = measure(ctx, date, 19, 400, f);
+  text(ctx, date, R, 70, k.mute, "right");
+  byline(ctx, d, k, f, L + 44, 70, 19, R - dw - GAP - (L + 44));
 
-  // the big number
-  font(ctx, 112, 700, f, -0.045);
-  text(ctx, fmt(d.total), L - 4, 214, k.ink);
-  const nw = ctx.measureText(fmt(d.total)).width;
-  font(ctx, 22, 400, f);
-  text(ctx, t().cardTotal, L + nw + 22, 180, k.mute);
-  runs(ctx, gainParts(d, k), L + nw + 22, 212, 22, f);
+  // the total and the period's gain, beside the daily chart
+  const heroW = 500;
+  label(ctx, t().cardTotal, L, 140, 14, k.mute, f);
+  const total = fmt(d.total), z = fitSize(ctx, total, heroW, 100, 700, f, -0.04);
+  text(ctx, total, L - z * 0.03, 152 + z * 0.74, k.ink);
+  gainChip(ctx, d, k, f, L, 262, 19, heroW);
+  dailyBlock(ctx, d, rows, k, f, 620, 140, R - 620, 160, 14, 1.5);
 
-  // one line per plugin
-  const top = 256, foot = 612;
+  // the table
+  const cols = t().cardCols(d.days);
+  const size = 21, hs = 13;
+  const hasRank = rows.some((r) => r.topPct != null);
+  const colW = (vals: string[], head: string, weight: number) =>
+    Math.max(...vals.map((v) => measure(ctx, v, size, weight, f)), measure(ctx, head.toUpperCase(), hs, 600, f, tracking(head)));
+  const rankW = hasRank ? colW(rows.map((r) => topText(r.topPct)), cols[4], 400) : 0;
+  const gainR = hasRank ? R - rankW - GAP : R;
+  const gainW = colW(rows.map((r) => r.gain == null ? "–" : signed(r.gain)), cols[3], 600);
+  const totalR = gainR - gainW - GAP;
+  const totalW = colW(rows.map((r) => fmt(r.total)), cols[2], 400);
+  const sparkR = totalR - totalW - GAP, nameL = L + 26;
+  // The name keeps at least 200px; the line gives way first.
+  const sparkW = Math.max(80, Math.min(200, sparkR - nameL - 200 - GAP));
+  const sparkL = sparkR - sparkW, nameW = sparkL - GAP - nameL;
+
+  const head = 350;
+  label(ctx, cols[0], nameL, head, hs, k.mute, f);
+  font(ctx, hs, 600, f, tracking(cols[1]));
+  label(ctx, fit(ctx, cols[1].toUpperCase(), sparkW), sparkL, head, hs, k.mute, f);
+  label(ctx, cols[2], totalR, head, hs, k.mute, f, "right");
+  label(ctx, cols[3], gainR, head, hs, k.mute, f, "right");
+  if (hasRank) label(ctx, cols[4], R, head, hs, k.mute, f, "right");
+
+  const top = 364, bottom = 600;
   const n = rows.length + (d.more ? 1 : 0);
-  const rh = Math.min(84, (foot - 20 - top) / Math.max(1, n));
+  const rh = Math.min(62, (bottom - top) / Math.max(1, n));
   rows.forEach((r, i) => {
-    const y = top + i * rh;
+    const y = top + i * rh, mid = y + rh / 2 + size * 0.36;
     hairline(ctx, L, R, y, k.line, 1.5);
-    const mid = y + rh / 2 + 8;
-    dot(ctx, L + 6, mid - 7, 6, r.color);
-    font(ctx, 22, 600, f);
-    text(ctx, fit(ctx, r.name, 330), L + 28, mid, k.ink);
-    spark(ctx, r.daily, 420, y + rh / 2 - 18, 220, 36, r.color, 2.5);
-    font(ctx, 22, 400, f);
-    text(ctx, fmt(r.total), 820, mid, k.ink, "right");
-    text(ctx, r.gain == null ? "–" : signed(r.gain), 960, mid, k.up, "right");
-    text(ctx, topText(r.topPct), R, mid, k.mute, "right");
+    dot(ctx, L + 6, y + rh / 2, 6, r.color);
+    font(ctx, size, 600, f);
+    text(ctx, fit(ctx, r.name, nameW), nameL, mid, k.ink);
+    spark(ctx, r.daily, sparkL, y + rh / 2 - 14, sparkW, 28, r.color, 2.5);
+    font(ctx, size, 400, f);
+    text(ctx, fmt(r.total), totalR, mid, k.ink, "right");
+    if (hasRank) text(ctx, topText(r.topPct), R, mid, k.mute, "right");
+    font(ctx, size, 600, f);
+    text(ctx, r.gain == null ? "–" : signed(r.gain), gainR, mid, k.up, "right");
   });
   if (d.more) {
     const y = top + rows.length * rh;
     hairline(ctx, L, R, y, k.line, 1.5);
-    font(ctx, 20, 400, f);
-    text(ctx, t().cardMore(d.more.n, fmt(d.more.total)), L + 28, y + rh / 2 + 7, k.mute);
+    ctx.strokeStyle = k.ring;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(L + 6, y + rh / 2, 5, 0, Math.PI * 2); ctx.stroke();
+    font(ctx, 19, 400, f);
+    text(ctx, fit(ctx, t().cardMore(d.more.n, fmt(d.more.total)), R - nameL), nameL, y + rh / 2 + 7, k.mute);
   }
-
-  // foot
-  hairline(ctx, L, R, foot, k.ink, 1.5);
-  runs(ctx, [{ s: t().cardMadePre, color: k.mute }, { s: t().appName, color: k.ink, weight: 600 }, { s: t().cardMadePost, color: k.mute }], L, foot + 36, 17, f);
-  font(ctx, 17, 400, f);
-  text(ctx, t().cardSource, R, foot + 36, k.mute, "right");
+  footer(ctx, k, f, L, R, 616, 16, false, 1.5);
 }
 
 /** 9:16. Stories cover about the top and bottom 250px with their own buttons, so the card lives between. */
 function drawStory(ctx: Ctx, d: CardData, rows: Drawn[], k: Ink, f: string) {
   const L = 96, R = 1080 - 96, W = R - L;
-  // header
-  dot(ctx, L + 10, 262, 8, k.ink);
-  ctx.strokeStyle = k.ring; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(L + 10, 262, 15, 0, Math.PI * 2); ctx.stroke();
-  font(ctx, 34, 600, f);
-  text(ctx, fit(ctx, d.author ?? t().cardPlugins(d.count), W - 46), L + 46, 274, k.ink);
-  font(ctx, 30, 400, f);
-  text(ctx, (d.author ? t().cardPlugins(d.count) + " · " : "") + cardDate(d.date), L, 334, k.mute);
+  mark(ctx, L, 236, 46, k);
+  const count = t().cardPlugins(d.count), date = cardDate(d.date);
+  if (d.author) {
+    font(ctx, 34, 600, f);
+    text(ctx, fit(ctx, d.author, W - 66), L + 66, 272, k.ink);
+    font(ctx, 28, 400, f);
+    text(ctx, fit(ctx, count + " · " + date, W), L, 340, k.mute);
+  } else {
+    font(ctx, 28, 400, f);
+    text(ctx, fit(ctx, count + " · " + date, W - 66), L + 66, 270, k.mute);
+  }
 
-  // the big number
-  font(ctx, 196, 700, f, -0.05);
-  text(ctx, fmt(d.total), L - 8, 540, k.ink);
-  font(ctx, 34, 400, f);
-  text(ctx, t().cardTotal, L, 600, k.mute);
-  runs(ctx, gainParts(d, k), L, 648, 34, f);
+  // the total and the period's gain
+  label(ctx, t().cardTotal, L, 440, 24, k.mute, f);
+  const total = fmt(d.total), z = fitSize(ctx, total, W, 200, 700, f, -0.045);
+  const base = 462 + z * 0.74;
+  text(ctx, total, L - z * 0.03, base, k.ink);
+  const chipTop = base + 40;
+  const ch = gainChip(ctx, d, k, f, L, chipTop, 32, W);
 
-  // a block per plugin: name and total, the line, then the gain and rank
-  const top = 712, foot = 1590;
-  const n = rows.length + (d.more ? 1 : 0);
-  const bh = Math.min(270, (foot - 24 - top) / Math.max(1, n));
+  // the daily chart, taller when there are few plugins below it
+  const n = rows.length + (d.more ? 1 : 0), bottom = 1540;
+  const chartY = chipTop + ch + 100;
+  const chartH = Math.max(220, Math.min(460, bottom - 56 - chartY - n * 124));
+  dailyBlock(ctx, d, rows, k, f, L, chartY, W, chartH, 24, 2);
+
+  // one block per plugin: name and total, then the gain and rank
+  const top = chartY + chartH + 56;
+  const bh = Math.min(124, (bottom - top) / Math.max(1, n));
   rows.forEach((r, i) => {
-    const y = top + i * bh;
+    const y = top + i * bh, l1 = y + bh * 0.44, l2 = y + bh * 0.82;
     hairline(ctx, L, R, y, k.line, 2);
-    dot(ctx, L + 9, y + 50, 9, r.color);
-    font(ctx, 36, 400, f);
-    const total = fmt(r.total);
-    const tw = ctx.measureText(total).width;
-    text(ctx, total, R, y + 62, k.ink, "right");
-    font(ctx, 36, 600, f);
-    text(ctx, fit(ctx, r.name, W - tw - 80), L + 36, y + 62, k.ink);
-    spark(ctx, r.daily, L, y + 92, W, Math.max(30, bh - 170), r.color, 4);
-    font(ctx, 30, 400, f);
-    text(ctx, r.gain == null ? "–" : signed(r.gain), L, y + bh - 28, k.up);
-    text(ctx, topText(r.topPct), R, y + bh - 28, k.mute, "right");
+    dot(ctx, L + 9, l1 - 12, 9, r.color);
+    const tot = fmt(r.total), tw = measure(ctx, tot, 34, 400, f);
+    text(ctx, tot, R, l1, k.ink, "right");
+    font(ctx, 34, 600, f);
+    text(ctx, fit(ctx, r.name, W - 36 - tw - GAP), L + 36, l1, k.ink);
+    const top3 = topText(r.topPct), rw = measure(ctx, top3, 28, 400, f);
+    if (top3) text(ctx, top3, R, l2, k.mute, "right");
+    const g = r.gain == null ? "–" : signed(r.gain);
+    font(ctx, 28, 600, f);
+    text(ctx, g, L + 36, l2, k.up);
+    const gw = ctx.measureText(g).width;
+    font(ctx, 28, 400, f);
+    text(ctx, fit(ctx, " " + t().cardPeriod(d.days), R - rw - GAP - (L + 36 + gw)), L + 36 + gw, l2, k.mute);
   });
   if (d.more) {
     const y = top + rows.length * bh;
     hairline(ctx, L, R, y, k.line, 2);
+    ctx.strokeStyle = k.ring;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(L + 9, y + 46, 8, 0, Math.PI * 2); ctx.stroke();
     font(ctx, 28, 400, f);
-    text(ctx, t().cardMore(d.more.n, fmt(d.more.total)), L + 36, y + 58, k.mute);
+    text(ctx, fit(ctx, t().cardMore(d.more.n, fmt(d.more.total)), W - 36), L + 36, y + 56, k.mute);
   }
-
-  // foot
-  hairline(ctx, L, R, foot, k.ink, 2);
-  runs(ctx, [{ s: t().cardMadePre, color: k.mute }, { s: t().appName, color: k.ink, weight: 600 }, { s: t().cardMadePost, color: k.mute }], L, foot + 52, 30, f);
-  font(ctx, 26, 400, f);
-  text(ctx, t().cardSource, L, foot + 94, k.mute);
+  footer(ctx, k, f, L, R, 1580, 26, true, 2);
 }
 
 // ---------- the dialog ----------
@@ -315,14 +457,22 @@ export class ShareModal extends Modal {
     el.createEl("p", { cls: "pp-muted pp-share-hint", text: this.opts.format === "story" ? t().shareStoryHint : t().shareWideHint });
 
     const foot = el.createDiv({ cls: "modal-button-container" });
-    foot.createEl("button", { text: t().shareCopy, attr: { type: "button" } }).addEventListener("click", () => void this.export("copy"));
-    foot.createEl("button", { cls: "mod-cta", text: t().shareSave, attr: { type: "button" } }).addEventListener("click", () => void this.export("save"));
+    const button = (text: string, mode: "copy" | "save" | "download", cta = false) =>
+      foot.createEl("button", { cls: cta ? "mod-cta" : "", text, attr: { type: "button" } }).addEventListener("click", () => void this.export(mode));
+    button(t().shareCopy, "copy");
+    // A file saved outside the vault needs a desktop's save dialog; on a phone the vault is the place.
+    if (Platform.isDesktopApp) { button(t().shareSave, "save"); button(t().shareDownload, "download", true); }
+    else button(t().shareSave, "save", true);
   }
 
-  /** Copy puts the image on the clipboard; where that isn't possible it falls back to saving. Save puts a PNG in the vault and opens it. */
-  private async export(mode: "copy" | "save") {
+  /**
+   * Copy puts the image on the clipboard; where that isn't possible it falls back to saving.
+   * Save puts a PNG in the vault and opens it. Download asks where on the computer to put it.
+   */
+  private async export(mode: "copy" | "save" | "download") {
     const blob = await new Promise<Blob | null>((resolve) => this.canvas.toBlob(resolve, "image/png"));
     if (!blob) { new Notice(t().shareFailed); return; }
+    if (mode === "download") { await this.download(blob); return; }
     if (mode === "copy") {
       try {
         if (!navigator.clipboard || typeof ClipboardItem === "undefined") throw new Error("clipboard");
@@ -334,9 +484,7 @@ export class ShareModal extends Modal {
       }
     }
     try {
-      const tag = this.opts.format === "story" ? "story" : "card";
-      const name = `${t().appName} ${tag} ${this.cardDate()}.png`;
-      const path = await this.freePath(name);
+      const path = await this.freePath(this.fileName());
       const file = await this.app.vault.createBinary(path, await blob.arrayBuffer());
       new Notice(t().exported(path));
       this.close();
@@ -344,6 +492,30 @@ export class ShareModal extends Modal {
     } catch {
       new Notice(t().shareFailed);
     }
+  }
+
+  private fileName() { return `${t().appName} ${this.opts.format === "story" ? "story" : "card"} ${this.cardDate()}.png`; }
+
+  /** The system's save dialog where the app has one, otherwise a plain browser download. */
+  private async download(blob: Blob) {
+    const name = this.fileName();
+    type Picker = (o: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<FileSystemFileHandle>;
+    const picker = (window as unknown as { showSaveFilePicker?: Picker }).showSaveFilePicker;
+    if (picker) {
+      try {
+        const handle = await picker.call(window, { suggestedName: name, types: [{ description: "PNG", accept: { "image/png": [".png"] } }] });
+        const out = await handle.createWritable();
+        await out.write(blob);
+        await out.close();
+        new Notice(t().shareDownloaded);
+        return;
+      } catch (e) {
+        if ((e as DOMException)?.name === "AbortError") return; // closed the dialog
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    createEl("a", { href: url, attr: { download: name } }).click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 10000);
   }
 
   private cardDate() { return cardData(this.plugin, this.opts.days, 1)?.date ?? new Date().toISOString().slice(0, 10); }

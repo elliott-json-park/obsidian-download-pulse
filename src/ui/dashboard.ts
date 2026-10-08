@@ -16,7 +16,7 @@ import { authorSearch } from "./modals";
 export const DASHBOARD_VIEW = "plugin-pulse-dashboard";
 
 /** First day of the public archive; a series starting then began before the archive did, so its age is unknown. */
-const ARCHIVE_EPOCH = "2020-11-01";
+const ARCHIVE_EPOCH = "2020-10-31";
 
 interface Insight { k: string; t: string; b: string }
 interface Tile { label: string; color?: string; value: number | string; prefix?: string; pre?: string; unit?: string; sub?: string; spark?: (number | null)[]; bars?: (number | null)[]; barMax?: number }
@@ -124,9 +124,17 @@ export class DashboardView extends ItemView {
     refresh.toggleClass("is-spinning", s.state === "loading");
     liveDot.className = "pp-live-dot" + (s.state === "ok" || s.state === "partial" ? " is-on" : s.state === "offline" ? " is-err" : "");
     const time = s.at ? new Date(s.at).toLocaleTimeString(loc(), { hour: "2-digit", minute: "2-digit" }) : "";
-    liveText.setText(s.state === "loading" ? t().checking : s.state === "offline" ? t().offline : s.state !== "idle" && time ? t().checkedAt(time) : "");
+    liveText.setText(s.state === "loading" ? t().checking : s.state === "offline" ? t().offline : s.state !== "idle" && time ? t().checkedAt(time) + " · " + this.nextText() : "");
     const notes = s.detail?.split("\n").map((n) => n === "github-limit" ? t().githubLimit : n).join("\n");
     this.tip.bind(live, [s.state === "partial" ? t().partial : "", notes ?? ""].filter(Boolean).join("\n") || t().refresh, false);
+  }
+
+  /** When Obsidian's next file is due, in local time: "next update ~9:40", tomorrow's marked, a late one says so. */
+  private nextText(): string {
+    const at = this.plugin.engine.nextPublish(), now = Date.now();
+    if (at <= now) return t().nextLate;
+    const d = new Date(at), time = d.toLocaleTimeString(loc(), { hour: "numeric", minute: "2-digit" });
+    return t().nextAt(time, d.toDateString() !== new Date(now).toDateString());
   }
 
   setView(view: string, mode?: UiState["mode"]): void {
@@ -305,7 +313,7 @@ export class DashboardView extends ItemView {
       const day = signed(A.last.daily);
       const record = A.lastRank === 1 && A.d.length > 7;
       const extra = record ? t().allTimeBest : A.ratio != null && A.ratio >= 1.15 ? t().timesUsual(fmt1(A.ratio)) : A.ratio != null && A.ratio <= 0.85 ? t().quieter : "";
-      rich(heroLine, t().latestDay(day) + (extra ? " · " + extra : ""));
+      rich(heroLine, t().latestDay(day) + (extra ? " · " + extra : "") + (A.last.gap ? t().missedDay : ""));
     }
     rich(heroChips.createSpan({ cls: "pp-chip" }), `${t().days7} **${signed(A.sum7)}** ${delta(A.momentum)}`);
     if (scope.id) {
@@ -803,11 +811,11 @@ export class DashboardView extends ItemView {
       const full = this.m.series(id), latest = this.m.latest(id), a = this.m.analyze(full), st = this.m.standing(id);
       const vs = Object.keys(store.versions[id] ?? {}).sort(semverCmp);
       return [`§${this.colorOf(id)}§${this.nameOf(id)}`, fmt(latest?.downloads), signed(this.m.gainOver(full, 7)), delta(a?.momentum) || "–", signed(this.m.gainOver(full, 30)),
-        full.length && latest ? fmt1(latest.downloads / full.length) : "–", st ? t().rankTick(fmt(st.rank)) : "–",
+        a ? fmt1(mean(a.d.slice(-14).filter((x) => !x.gap).map((x) => x.daily))) : "–", st ? t().rankTick(fmt(st.rank)) : "–",
         vs.length ? "v" + vs[vs.length - 1] : "–", fmt(vs.length), fmt(store.repos[id]?.stars), full[0]?.date ?? "–"];
     });
     if (A && total.length) rows.push([`**${t().hSum}**`, `**${fmt(A.total)}**`, signed(this.m.gainOver(A.full, 7)), delta(A.momentum) || "–", signed(this.m.gainOver(A.full, 30)),
-      fmt1(A.total / total.length), "–", "–", fmt(mine.reduce((n, id) => n + Object.keys(store.versions[id] ?? {}).length, 0)), fmt(mine.reduce((n, id) => n + (store.repos[id]?.stars ?? 0), 0)), total[0].date]);
+      fmt1(mean(A.d.slice(-14).filter((x) => !x.gap).map((x) => x.daily))), "–", "–", fmt(mine.reduce((n, id) => n + Object.keys(store.versions[id] ?? {}).length, 0)), fmt(mine.reduce((n, id) => n + (store.repos[id]?.stars ?? 0), 0)), total[0].date]);
     this.tableCard([t().hPlugin, t().hTotal, t().h7, t().hMomentum, t().h30, t().hPerDay, t().hRank, t().hLatest, t().hVersions, t().hStars, t().hFirst], rows, t().cSummary, t().dSummary, true);
   }
 
@@ -877,7 +885,7 @@ export class DashboardView extends ItemView {
       const upd = store.updated[id];
       const name = this.nameOf(id) + (id === me ? ` (${t().you})` : "");
       return [`§${this.colorOf(id)}§${name}`, fmt(latest?.downloads), signed(a?.sum7), delta(a?.momentum) || "–", signed(this.m.gainOver(full, 30)),
-        a ? fmt1(mean(a.d.slice(-14).map((x) => x.daily))) : "–", st ? t().rankTick(fmt(st.rank)) : "–",
+        a ? fmt1(mean(a.d.slice(-14).filter((x) => !x.gap).map((x) => x.daily))) : "–", st ? t().rankTick(fmt(st.rank)) : "–",
         race ? signed(race.gap) : "–", race?.days == null ? "–" : race.gap > 0 ? "~" + t().daysN(fmt(race.days)) : `{down|${t().caughtIn(fmt(race.days))}}`,
         rel[0] ? "v" + rel[0].version : "–", upd ? t().ago(Math.max(0, dayDiff(new Date(upd).toISOString().slice(0, 10), today))) : "–",
         cad != null ? t().daysN(fmt1(cad)) : "–", fmt(store.repos[id]?.stars), full[0]?.date ?? "–"];
@@ -919,7 +927,8 @@ export class DashboardView extends ItemView {
     const push = (k: string, tt: string, b: string) => out.push({ k, t: tt, b });
     if (A.last && A.avgPrev != null) {
       const r = A.ratio ?? 1, v = signed(A.last.daily);
-      const head = A.lastRank === 1 && A.d.length > 7 ? t().bestDay(v) : r >= 1.15 ? t().usualTimes(fmt1(r), v) : r <= 0.85 ? t().quietDay(v) : t().usualDay(v);
+      // A reading after missed days holds several days: it is not compared with single days.
+      const head = A.last.gap ? t().usualDay(v) + t().missedDay : A.lastRank === 1 && A.d.length > 7 ? t().bestDay(v) : r >= 1.15 ? t().usualTimes(fmt1(r), v) : r <= 0.85 ? t().quietDay(v) : t().usualDay(v);
       push(t().kLatest, head, t().latestBody(longDate(A.last.date), signed(A.avgPrev), A.d.length, A.lastRank ?? 0) +
         (A.lastRank !== 1 && A.best ? t().latestBest(longDate(A.best.date), signed(A.best.daily)) : ""));
     }

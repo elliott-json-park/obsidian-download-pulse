@@ -18,6 +18,10 @@ export interface Status { state: StatusState; at: number; detail?: string }
 
 const ARCHIVE_EVERY = 3 * 86400e3;
 const GITHUB_EVERY = 12 * 3600e3;
+/** Obsidian commits the stats file once a day, usually around 00:25 UTC. */
+const PUBLISH_UTC_MIN = 25;
+/** How long after the expected time to look, so a slightly late file is already there. */
+const PUBLISH_SLACK = 15 * 60e3;
 
 /**
  * Keeps the local history current. One refresh costs one GitHub API call when nothing changed;
@@ -96,14 +100,16 @@ export class Engine extends Events {
     }
 
     if (!commits?.length) {
-      // GitHub's API is unavailable (usually its hourly limit): read the file directly and date it today.
+      // GitHub's API is unavailable (usually its hourly limit): read the file directly. Without its commit
+      // the date is a guess: today's file once it is likely out, yesterday's before that.
       if (!force && this.latest && Date.now() - this.store.lastChecked < 10 * 60e3) return false;
       const stats = await fetchStats();
       const sorted = sortedDownloads(stats);
       const moved = ids.some((id) => stats[id] && this.latestDownloads(id) !== stats[id].downloads);
-      const date = todayUtc();
+      const date = new Date(Date.now() - (PUBLISH_UTC_MIN * 60e3 + PUBLISH_SLACK)).toISOString().slice(0, 10);
       this.latest = { sha: "", date, stats, sorted };
-      if (moved || ids.some((id) => stats[id] && !getPoint(this.store, id, date))) {
+      // Only a file that differs from the last reading is a new day; the same numbers again are not.
+      if (moved || ids.some((id) => stats[id] && this.latestDownloads(id) == null)) {
         recordDay(this.store, stats, date, ids, mine, sorted);
         return true;
       }
@@ -122,9 +128,8 @@ export class Engine extends Events {
       const since = this.firstOfficialDay();
       for (const c of commits.slice(1)) {
         if (todo.length > cap || !since || c.date < since || c.date < addDays(head.date, -cap)) break;
-        const key = c.sha;
-        if (this.tried.has(key)) continue;
-        if (this.settings.mine.some((id) => getPoint(this.store, id, c.date)?.rank == null)) { todo.push(c); this.tried.add(key); }
+        if (this.tried.has(c.sha)) continue;
+        if (this.settings.mine.some((id) => getPoint(this.store, id, c.date)?.rank == null)) todo.push(c);
       }
     }
 
@@ -134,6 +139,8 @@ export class Engine extends Events {
       const stats = reuse?.stats ?? await fetchStats(c.sha);
       const sorted = reuse?.sorted ?? sortedDownloads(stats);
       recordDay(this.store, stats, c.date, ids, mine, sorted);
+      // A day read once is not read again this session, even if a plugin is missing from it. A failed read is tried again.
+      this.tried.add(c.sha);
       if (c === head) {
         this.latest = { sha: c.sha, date: c.date, stats, sorted };
         this.absent = new Set(ids.filter((id) => !stats[id]));
@@ -141,6 +148,7 @@ export class Engine extends Events {
       changed = true;
     }
     this.store.lastSha = head.sha;
+    this.store.publishedAt = head.at;
     return changed;
   }
 
@@ -174,6 +182,24 @@ export class Engine extends Events {
       if (i >= 0) { const d = addDays(s.start, i); if (!first || d < first) first = d; }
     }
     return first;
+  }
+
+  /** When the next file is expected (ms): a day after the last one we read, or the next usual publish time. */
+  nextPublish(now = Date.now()): number {
+    const usual = (from: number) => {
+      const d = new Date(from);
+      const at = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, PUBLISH_UTC_MIN);
+      return at > from ? at : at + 86400e3;
+    };
+    const p = this.store.publishedAt;
+    // More than a few hours overdue (a skipped day, or an old reading): expect the next usual time instead.
+    return p && p + 86400e3 + 6 * 3600e3 > now ? p + 86400e3 : usual(now);
+  }
+
+  /** When to look next in the automatic schedule: just after the file is due, or every 30 minutes while it is late. */
+  nextCheck(now = Date.now()): number {
+    const due = this.nextPublish(now) + PUBLISH_SLACK;
+    return due > now ? due : now + 30 * 60e3;
   }
 
   latestDownloads(id: string): number | null {

@@ -64,15 +64,17 @@ color only where it means a plugin.
 
 Passed 1,000 downloads, or had your best month yet? Turn it into an image
 card and post it. The card shows your plugins' total, what they gained in the
-last 7, 30 or 90 days, and one line per plugin: its last days as a line, its
-total, its gain and where it ranks among all community plugins.
+last 7, 30 or 90 days, a chart of new downloads a day with each plugin in its
+color, and one line per plugin: its total, its gain and where it ranks among all
+community plugins. Long names and big numbers are measured and fitted, so text
+never runs into the next column.
 
-![The share card in its two shapes: a 16:9 post card and a 9:16 story card, each with 3,538 total downloads across three plugins and a line per plugin](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/share-card.png)
+![The share card in its two shapes: a 16:9 post card and a 9:16 story card, each with 4,536 total downloads across three plugins, a chart of new downloads a day and a line per plugin](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/share-card.png)
 
 - **Post 16:9**: 1200×675, saved at twice the size. For X, Discord, Reddit and the forum.
 - **Story 9:16**: 1080×1920 for Instagram and other stories. The top and bottom are left clear for the story's own buttons.
 - **Light or dark**, whatever your Obsidian theme is.
-- **Copy image** to paste it straight into a post or a message, or **Save to vault** to keep it as a PNG in your attachment folder.
+- **Copy image** to paste it straight into a post or a message, **Save to vault** to keep it as a PNG in your attachment folder, or **Download PNG** (desktop) to pick a place on your computer.
 
 Open it with the image button at the top of the dashboard, *Share a card of
 your plugins* in the command palette, or *Share* on a milestone notice. The
@@ -139,7 +141,7 @@ you build in it, or watch a plugin you depend on.
 ### Settings
 
 - **Your plugins**: reorder, remove, and edit each one's competitors.
-- **Check for new stats**: every 15 minutes to 6 hours (30 minutes by default). It also checks when you open the dashboard or return to Obsidian, or only when you refresh.
+- **Check for new stats**: by default right after Obsidian publishes the day's file (around 00:25 UTC), and every 30 minutes while it is late; or every 1 to 6 hours, or only when you refresh. It also checks when you open the dashboard or return to Obsidian. The dashboard header shows when the next file is due.
 - **Fill in past history**, **Catch up on missed days**, **Read official history**: see below.
 - **GitHub token**: optional, for release dates and stars beyond GitHub's anonymous limit.
 - **Motion**, **Status bar**, **Milestone notices**, **Language** (English, 한국어).
@@ -155,7 +157,8 @@ That number counts installs **and updates**, so it isn't a count of users. A
 plugin that ships often collects downloads from its existing users too.
 
 Download Pulse reads that file and keeps each day's value in its own data file.
-A "day" is the UTC day Obsidian published the file. Forecasts and "around
+A "day" is the UTC day the downloads happened: the file published just after
+midnight UTC holds the day before, so that is the date it gets. Forecasts and "around
 Oct 6" estimates assume the last 7 days' pace continues.
 
 ### Network use
@@ -165,7 +168,7 @@ nothing about your vault:
 
 | Request | Why | When |
 |---|---|---|
-| `api.github.com/repos/obsidianmd/obsidian-releases/commits` | Has a new stats file been published? One small call. | Each check (every 30 minutes by default, when you open the dashboard, and when you return to Obsidian; at most once per 5 minutes) |
+| `api.github.com/repos/obsidianmd/obsidian-releases/commits` | Has a new stats file been published? One small call. | Each check (right after the daily publish by default, when you open the dashboard, and when you return to Obsidian; at most once per 5 minutes) |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/…/community-plugin-stats.json` | The official numbers, about 2.5 MB | Only when Obsidian has published a new file, about once a day |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugins.json` | Plugin names, authors and repos for search and suggestions | When you search or add competitors |
 | `api.github.com/repos/<owner>/<repo>` and `…/releases` | Stars and release dates of followed plugins | At most twice a day per plugin |

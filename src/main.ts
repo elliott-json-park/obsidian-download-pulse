@@ -1,7 +1,7 @@
 import { Notice, Plugin, type WorkspaceLeaf } from "obsidian";
 import { DEFAULT_SETTINGS, emptyStore, type PluginData, type PluginMeta, type Settings, type Store, type UiState } from "./types";
 import { Engine } from "./data/engine";
-import { prune } from "./data/store";
+import { addDays, prune, todayUtc } from "./data/store";
 import { setLanguage, t } from "./i18n";
 import { PulseSettingTab } from "./settings";
 import { DashboardView, DASHBOARD_VIEW } from "./ui/dashboard";
@@ -9,7 +9,7 @@ import { GlanceView, GLANCE_VIEW, PulseBlock } from "./ui/glance";
 import { CompetitorsModal, PickMineModal, PluginSearchModal } from "./ui/modals";
 import { ShareModal } from "./ui/share";
 import { Model } from "./analysis";
-import { fmt, signed } from "./ui/util";
+import { fmt, shortDate, signed } from "./ui/util";
 
 export default class PulsePlugin extends Plugin {
   settings!: Settings;
@@ -26,6 +26,9 @@ export default class PulsePlugin extends Plugin {
       ui: { ...DEFAULT_SETTINGS.ui, ...data?.settings?.ui },
       share: { ...DEFAULT_SETTINGS.share, ...data?.settings?.share },
     };
+    // Before 1.2 the schedule was a fixed interval, 30 minutes by default. The file changes once a day,
+    // so the short intervals become the schedule that looks right after it is published.
+    if (this.settings.refreshMinutes > 0 && this.settings.refreshMinutes < 60) this.settings.refreshMinutes = -1;
     this.store = { ...emptyStore(), ...data?.store };
     setLanguage(this.settings.language);
 
@@ -71,6 +74,8 @@ export default class PulsePlugin extends Plugin {
     });
 
     this.registerEvent(this.engine.on("changed", () => this.updateStatusBar()));
+    // A reading moves the next expected publish time; look again then.
+    this.registerEvent(this.engine.on("status", () => { const st = this.engine.status.state; if (st === "ok" || st === "partial") this.schedule(); }));
     const onMotion = () => this.redraw();
     this.reducedMotion.addEventListener("change", onMotion);
     this.register(() => this.reducedMotion.removeEventListener("change", onMotion));
@@ -88,7 +93,7 @@ export default class PulsePlugin extends Plugin {
   }
 
   onunload(): void {
-    if (this.timer != null) window.clearInterval(this.timer);
+    if (this.timer != null) window.clearTimeout(this.timer);
   }
 
   // ---------- what the engine needs ----------
@@ -113,13 +118,15 @@ export default class PulsePlugin extends Plugin {
     return this.settings.motion === "auto" ? !this.reducedMotion.matches : this.settings.motion === "on";
   }
 
+  /** One timer at a time: the next check, set again after every reading. */
   schedule(): void {
-    if (this.timer != null) window.clearInterval(this.timer);
+    if (this.timer != null) window.clearTimeout(this.timer);
     this.timer = null;
-    if (this.settings.refreshMinutes > 0) {
-      this.timer = window.setInterval(() => void this.engine.refresh(), this.settings.refreshMinutes * 60e3);
-      this.registerInterval(this.timer);
-    }
+    const m = this.settings.refreshMinutes;
+    if (m === 0) return;
+    const delay = m > 0 ? m * 60e3 : Math.max(60e3, this.engine.nextCheck() - Date.now());
+    // Timers stop while the computer sleeps; coming back to Obsidian checks anyway (see onload).
+    this.timer = window.setTimeout(() => { this.timer = null; void this.engine.refresh().finally(() => { if (this.timer == null) this.schedule(); }); }, Math.min(delay, 2 ** 31 - 1));
   }
 
   /** Re-renders open views, e.g. after the language or motion setting changed. */
@@ -141,7 +148,9 @@ export default class PulsePlugin extends Plugin {
       const p = m.series(id).find((x) => x.date === latest);
       return n + (p?.daily ?? 0);
     }, 0);
-    this.statusEl.setText(t().statusBar(signed(today)));
+    // The newest numbers are for yesterday (UTC) once the day's file is out; say which day they are.
+    const day = latest === addDays(todayUtc(), -1) ? t().yesterday : latest ? shortDate(latest) : "";
+    this.statusEl.setText(t().statusBar(signed(today), day));
     this.statusEl.setAttr("aria-label", t().statusBarTip);
   }
 

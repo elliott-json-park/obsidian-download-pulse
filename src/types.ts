@@ -63,6 +63,7 @@ export interface Settings {
   competitors: Record<string, string[]>;
   /** Directory entries for everything tracked, so names show offline. */
   meta: Record<string, PluginMeta>;
+  /** -1 checks right after Obsidian's daily publish time, 0 only by hand, otherwise every n minutes. */
   refreshMinutes: number;
   useArchive: boolean;
   catchUp: boolean;
@@ -90,6 +91,8 @@ export interface Store {
   /** Every plugin's downloads on the latest day, largest first. */
   market: { date: string; downloads: number[] } | null;
   lastSha: string;
+  /** When Obsidian published the newest file we read (ms), to know when the next one is due. */
+  publishedAt: number;
   lastChecked: number;
   /** When the archive and GitHub were last asked about each plugin (ms). */
   archivedAt: Record<string, number>;
@@ -107,7 +110,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mine: [],
   competitors: {},
   meta: {},
-  refreshMinutes: 30,
+  refreshMinutes: -1,
   useArchive: true,
   catchUp: true,
   githubSecret: "",
@@ -121,5 +124,5 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export const emptyStore = (): Store => ({
   series: {}, of: {}, versions: {}, vstart: {}, releases: {}, repos: {}, updated: {},
-  market: null, lastSha: "", lastChecked: 0, archivedAt: {}, githubAt: {}, celebrated: {},
+  market: null, lastSha: "", publishedAt: 0, lastChecked: 0, archivedAt: {}, githubAt: {}, celebrated: {},
 });

@@ -64,7 +64,7 @@ export class PulseSettingTab extends PluginSettingTab {
 
     const updates: Row[] = [
       { name: t().sInterval, desc: t().sIntervalDesc, render: (row) => row.addDropdown((d) => {
-        for (const m of [0, 15, 30, 60, 180, 360]) d.addOption(String(m), t().every(m));
+        for (const m of [-1, 60, 180, 360, 0]) d.addOption(String(m), t().every(m));
         d.setValue(String(s.refreshMinutes)).onChange(async (v) => { s.refreshMinutes = +v; await plugin.saveSettings(); plugin.schedule(); });
       }) },
       { name: t().sArchive, desc: t().sArchiveDesc, render: (row) => row.addToggle((tg) => tg.setValue(s.useArchive).onChange(async (v) => {
@@ -128,7 +128,13 @@ export class PulseSettingTab extends PluginSettingTab {
       { name: t().sClear, desc: t().sClearDesc, render: (row) => row.addButton((b) => {
         b.setButtonText(t().clearBtn).setDestructive();
         b.onClick(() => {
-          if (!armed) { armed = true; b.setButtonText(t().sClearConfirm); return; }
+          if (!armed) {
+            armed = true;
+            b.setButtonText(t().sClearConfirm);
+            // The second press has to follow soon; later, it asks again.
+            window.setTimeout(() => { armed = false; b.setButtonText(t().clearBtn); }, 5000);
+            return;
+          }
           plugin.store = emptyStore();
           void plugin.saveSettings().then(() => {
             plugin.engine.trigger("changed");

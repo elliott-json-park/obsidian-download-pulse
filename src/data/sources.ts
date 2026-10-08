@@ -29,18 +29,19 @@ async function getJson<T>(url: string, token?: string): Promise<T> {
   return res.json as T;
 }
 
-export interface StatsCommit { date: string; sha: string }
+/** `at` is when the commit was made (ms), which is when Obsidian published that day's numbers. */
+export interface StatsCommit { date: string; sha: string; at: number }
 
 /** Latest commit of the stats file per UTC day, newest first. One API call. */
 export async function statsCommits(count: number, token?: string): Promise<StatsCommit[]> {
   const list = await getJson<{ sha: string; commit: { committer: { date: string } } }[]>(
     `https://api.github.com/repos/${RELEASES_REPO}/commits?path=${STATS_FILE}&per_page=${Math.min(100, count)}`, token);
-  const byDate = new Map<string, string>();
+  const byDate = new Map<string, StatsCommit>();
   for (const c of list) {
     const date = c.commit.committer.date.slice(0, 10);
-    if (!byDate.has(date)) byDate.set(date, c.sha);
+    if (!byDate.has(date)) byDate.set(date, { date, sha: c.sha, at: Date.parse(c.commit.committer.date) });
   }
-  return [...byDate].map(([date, sha]) => ({ date, sha }));
+  return [...byDate.values()];
 }
 
 /** The official stats file (about 2.5 MB) at a commit, or at the tip of the branch. */

@@ -275,6 +275,109 @@ test("engine: goes offline gracefully when nothing answers", async () => {
   assert.equal(e.status.state, "offline");
 });
 
+// ---------- 1.2: days, missed days, late-followed plugins, the publish schedule ----------
+test("a reading in the file of day D is dated D − 1, the day the downloads happened", () => {
+  const s = emptyStore();
+  setPoint(s, "a", "2026-10-07", 100); // file published Wednesday 00:25 UTC
+  setPoint(s, "a", "2026-10-08", 130); // Thursday's file: Wednesday's downloads
+  const ser = new Model(s).series("a");
+  assert.deepEqual(ser.map((p) => p.date), ["2026-10-06", "2026-10-07"]);
+  assert.equal(ser[1].daily, 30);
+  assert.equal(new Model(s).analyze(ser)?.lastDate, "2026-10-07");
+});
+
+test("weekday averages use the day of the downloads", () => {
+  const s = emptyStore();
+  // 28 files; the ones published on Thursdays carry 100, the rest 10 — so Wednesdays are busiest.
+  let total = 0;
+  for (let i = 0; i < 28; i++) {
+    const file = addDays("2026-09-07", i); // a Monday
+    total += new Date(file + "T00:00:00Z").getUTCDay() === 4 ? 100 : 10;
+    setPoint(s, "a", file, total);
+  }
+  const A = new Model(s).analyze(new Model(s).series("a"));
+  assert.ok(A);
+  const best = A.weekday.reduce((b, x) => (x.avg ?? 0) > (b.avg ?? 0) ? x : b);
+  assert.equal(best.i, 2, "Wednesday (Monday = 0)");
+});
+
+test("a reading after missed days counts in sums but not in daily averages or records", () => {
+  const s = emptyStore();
+  linear(s, "a", "2026-09-01", 10, 0, 10); // 10 a day
+  setPoint(s, "a", "2026-09-14", 90 + 40); // four days in one reading
+  const A = new Model(s).analyze(new Model(s).series("a"));
+  assert.ok(A);
+  assert.equal(A.last?.gap, true);
+  assert.equal(A.pace, 10);
+  assert.equal(A.ratio, null);
+  assert.equal(A.lastRank, null);
+  assert.equal(A.best?.daily, 10);
+});
+
+test("totalSeries: a big plugin followed later without its past does not count as one day's downloads", () => {
+  const s = emptyStore();
+  linear(s, "a", "2026-09-01", 10, 100, 10);
+  linear(s, "big", "2026-09-06", 5, 10000, 30);
+  const tot = new Model(s).totalSeries(["a", "big"]);
+  const day = tot.find((x) => x.parts.big.total === 10000);
+  assert.ok(day);
+  assert.equal(day.parts.big.daily, 0);
+  assert.equal(day.daily, 10);
+  assert.ok(Math.max(...tot.map((x) => x.daily ?? 0)) < 100);
+});
+
+test("release effect compares the three days before a release with the three from its day on", () => {
+  const s = emptyStore();
+  const daily = [5, 5, 5, 20, 20, 20]; // downloads on Oct 2..7
+  let total = 0;
+  daily.forEach((v, i) => { total += v; setPoint(s, "a", addDays("2026-10-03", i), total); });
+  setPoint(s, "a", "2026-10-02", 0);
+  s.releases.a = [{ version: "1.1.0", date: "2026-10-05T08:00:00Z" }];
+  const m = new Model(s);
+  const [imp] = m.releaseImpact("a", m.series("a"));
+  assert.deepEqual(imp, { version: "1.1.0", date: "2026-10-05", before: 5, after: 20 });
+});
+
+test("schedule: the next look is just after tomorrow's file, or in 30 minutes while it is late", () => {
+  const h = host({ mine: ["a"] });
+  const e = new Engine(h);
+  const now = Date.parse("2026-10-08T03:00:00Z");
+  assert.equal(new Date(e.nextPublish(now)).toISOString(), "2026-10-09T00:25:00.000Z", "nothing read yet: the usual time");
+  h.store.publishedAt = Date.parse("2026-10-08T00:27:00Z");
+  assert.equal(new Date(e.nextCheck(now)).toISOString(), "2026-10-09T00:42:00.000Z");
+  const late = Date.parse("2026-10-09T01:00:00Z");
+  assert.equal(e.nextCheck(late), late + 30 * 60e3);
+  h.store.publishedAt = Date.parse("2026-10-01T00:27:00Z"); // an old reading: expect the usual time
+  assert.equal(new Date(e.nextPublish(now)).toISOString(), "2026-10-09T00:25:00.000Z");
+});
+
+test("engine: remembers when the newest file was published", async () => {
+  const h = host({ mine: ["a"], useArchive: false, catchUp: false, meta: { a: { id: "a", name: "A", author: "", repo: "", description: "" } } });
+  network([{ date: "2026-09-10", sha: "s1", stats: { a: { downloads: 9 } } }]);
+  await new Engine(h).refresh();
+  assert.equal(h.store.publishedAt, Date.parse("2026-09-10T01:00:00Z"));
+});
+
+test("engine: a day that failed to download is tried again", async () => {
+  const h = host({ mine: ["a"], useArchive: false, catchUp: true, meta: { a: { id: "a", name: "A", author: "", repo: "", description: "" } } });
+  network([{ date: "2026-09-10", sha: "s1", stats: { a: { downloads: 10 } } }]);
+  const e = new Engine(h);
+  await e.refresh();
+  const days = [
+    { date: "2026-09-10", sha: "s1", stats: { a: { downloads: 10 } } },
+    { date: "2026-09-11", sha: "s2", stats: { a: { downloads: 15 } } },
+    { date: "2026-09-12", sha: "s3", stats: { a: { downloads: 22 } } },
+  ];
+  network(days);
+  const routes = (globalThis as any).__routes, raw = routes[RAW];
+  routes[RAW] = (url: string) => url.includes("/s2/") ? { status: 500 } : raw(url);
+  await e.refresh();
+  assert.equal(getPoint(h.store, "a", "2026-09-11"), null);
+  routes[RAW] = raw;
+  await e.refresh();
+  assert.equal(getPoint(h.store, "a", "2026-09-11")?.downloads, 15);
+});
+
 // ---------- optional: the real dashboard history on this machine ----------
 const real = process.env.DASHBOARD_HISTORY;
 if (real && existsSync(real)) {

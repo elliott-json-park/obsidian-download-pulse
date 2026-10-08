@@ -1,5 +1,5 @@
 import type { Store } from "./types";
-import { addDays, dayDiff } from "./data/store";
+import { addDays, dayDiff, todayUtc } from "./data/store";
 
 /** Milestones worth naming. */
 export const NICE = [10, 25, 50, 100, 250, 500, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 250000, 500000, 750000, 1000000, 1500000, 2000000, 3000000, 5000000];
@@ -37,7 +37,11 @@ export class Model {
   private cache = new Map<string, Pt[]>();
   constructor(public store: Store) {}
 
-  /** Continuous daily series from the first to the last reading. Missed days carry `total: null`. */
+  /**
+   * Continuous daily series from the first to the last reading. Missed days carry `total: null`.
+   * Obsidian publishes the file shortly after midnight UTC, so a reading stored under day D holds the
+   * downloads made on day D − 1. Points here are dated by that day, the day the downloads happened.
+   */
   series(id: string): Pt[] {
     const hit = this.cache.get(id);
     if (hit) return hit;
@@ -48,7 +52,7 @@ export class Model {
       while (last >= 0 && s.d[last] == null) last--;
       let prev: { date: string; total: number } | null = null;
       for (let i = Math.max(0, first); first >= 0 && i <= last; i++) {
-        const date = addDays(s.start, i), total = s.d[i];
+        const date = addDays(s.start, i - 1), total = s.d[i];
         let daily: number | null = null;
         if (total != null && prev) daily = Math.max(0, total - prev.total);
         // A missed day folds its downloads into the next reading.
@@ -72,22 +76,30 @@ export class Model {
     if (!all.length) return [];
     const first = all.map(([, s]) => s[0].date).sort()[0], end = all.map(([, s]) => s[s.length - 1].date).sort().reverse()[0];
     const maps = new Map(all.map(([id, s]) => [id, new Map(s.map((p) => [p.date, p.total]))]));
+    // A plugin whose history starts at its listing brings its first reading in as new downloads. One followed
+    // later without its past (archive off or missing) would add its whole total in a day, so it starts at 0.
+    const listed = new Set(all.filter(([, s]) => {
+      const known = s.filter((p) => p.total != null);
+      const after = known.slice(1, 8).filter((p) => !p.gap && p.daily != null).map((p) => p.daily as number);
+      return (known[0].total as number) <= Math.max(50, 7 * mean(after));
+    }).map(([id]) => id));
     const last: Record<string, number | undefined> = {}, carried = new Set<string>(), out: TotalPt[] = [];
     for (let d = first; d <= end; d = addDays(d, 1)) {
       const parts: TotalPt["parts"] = {};
-      let total = 0, gap = false;
+      let total = 0, daily = 0, gap = false;
       for (const [id] of all) {
         const prev = last[id];
         const v = maps.get(id)?.get(d);
         const cur = v ?? prev ?? 0;
-        parts[id] = { total: cur, daily: prev == null ? (v != null && d !== first ? cur : 0) : cur - prev };
+        parts[id] = { total: cur, daily: prev == null ? (v != null && d !== first && listed.has(id) ? cur : 0) : cur - prev };
+        daily += parts[id].daily;
         // A reading after carried-forward days holds several days' downloads.
         if (v != null && carried.has(id)) gap = true;
         if (v == null && prev != null) carried.add(id); else if (v != null) carried.delete(id);
         if (v != null || prev != null) last[id] = cur;
         total += cur;
       }
-      out.push({ date: d, total, daily: out.length ? total - out[out.length - 1].total : null, gap, parts });
+      out.push({ date: d, total, daily: out.length ? daily : null, gap, parts });
     }
     return out;
   }
@@ -98,9 +110,11 @@ export class Model {
     const d = full.filter((x): x is Pt & { daily: number } => x.daily != null);
     const vals = (a: { daily: number }[]) => a.map((x) => x.daily);
     const last = d.length ? d[d.length - 1] : null;
-    const prev7 = d.slice(-8, -1), last7 = d.slice(-7), before7 = d.slice(-14, -7);
+    // Readings after missed days hold several days' downloads: they count in sums, not in daily averages.
+    const one = (a: (Pt & { daily: number })[]) => a.filter((x) => !x.gap);
+    const prev7 = one(d.slice(-8, -1)), last7 = d.slice(-7), before7 = d.slice(-14, -7);
     const avgPrev = prev7.length >= 3 ? mean(vals(prev7)) : null;
-    const pace = mean(vals(last7));
+    const pace = mean(vals(one(last7)));
     const sum7 = last7.reduce((n, x) => n + x.daily, 0);
     const sumBefore7 = before7.length === 7 ? before7.reduce((n, x) => n + x.daily, 0) : null;
     // Readings after missed days hold several days' downloads; they can't be anyone's best day.
@@ -119,17 +133,18 @@ export class Model {
     const half = [...known].reverse().find((x) => (x.total as number) <= total / 2);
     let streak = 0;
     for (let i = d.length - 1; i >= 0 && d[i].daily > 0; i--) streak++;
+    const lastOne = last && !last.gap ? last : null;
 
     // Weekday averages use the last four weeks so the overall trend does not drown the pattern.
-    const recent = d.slice(-28);
+    const recent = one(d.slice(-28));
     const wd: number[][] = Array.from({ length: 7 }, () => []);
     recent.forEach((x) => wd[weekdayOf(x.date)].push(x.daily));
     const weekday = wd.map((a, i) => ({ i, avg: a.length ? mean(a) : null, n: a.length }));
 
     return {
       full, d, last, avgPrev, pace, sum7, sumBefore7, best, total, lastDate, achieved, next, prevM, etaDays, streak, weekday,
-      ratio: last && avgPrev ? last.daily / avgPrev : null,
-      lastRank: last ? 1 + d.filter((x) => !x.gap && x.daily > last.daily).length : null,
+      ratio: lastOne && avgPrev ? lastOne.daily / avgPrev : null,
+      lastRank: lastOne ? 1 + d.filter((x) => !x.gap && x.daily > lastOne.daily).length : null,
       momentum: sumBefore7 ? (sum7 - sumBefore7) / sumBefore7 : null,
       etaDate: etaDays != null ? addDays(lastDate, etaDays) : null,
       doubleDays: half && (half.total as number) > 0 ? dayDiff(half.date, lastDate) : null,
@@ -142,7 +157,7 @@ export class Model {
     const s = this.series(id).filter((x) => x.rank != null);
     if (!s.length) return null;
     const latest = s[s.length - 1];
-    const of = this.store.of[latest.date] ?? this.store.market?.downloads.length ?? 0;
+    const of = this.store.of[addDays(latest.date, 1)] ?? this.store.market?.downloads.length ?? 0;
     if (!of) return null;
     const rank = latest.rank as number, downloads = latest.total as number;
     const weekAgo = [...s].reverse().find((x) => x.date <= addDays(latest.date, -7)) ?? s[0];
@@ -160,19 +175,20 @@ export class Model {
   launches(id: string): { version: string; first: string; total: number; first3: number; partial: boolean; known: boolean; days: number }[] {
     const log = this.store.versions[id] ?? {};
     const start = this.store.vstart[id];
-    const lastDate = this.latest(id)?.date;
+    // Version logs are kept by the file's date; series points are a day earlier (see `series`).
+    const latest = this.latest(id)?.date, lastFile = latest ? addDays(latest, 1) : null;
     return Object.entries(log).map(([version, e]) => {
       const known = !!start && e.first > start;
-      const days = lastDate ? Math.min(3, dayDiff(e.first, lastDate) + 1) : 1;
+      const days = lastFile ? Math.min(3, dayDiff(e.first, lastFile) + 1) : 1;
       const c = e.c.slice(0, days).filter((x): x is number => x != null);
       // A version watched from its launch shows the count it had after its first 3 days;
       // one already out when tracking started shows the downloads it gained over its first 3 observed days.
       const first3 = c.length ? (known ? c[c.length - 1] : c[c.length - 1] - c[0]) : e.total;
-      return { version, first: e.first, total: e.total, first3, partial: days < 3, known, days };
+      return { version, first: addDays(e.first, -1), total: e.total, first3, partial: days < 3, known, days };
     }).sort((a, b) => semverCmp(a.version, b.version));
   }
 
-  /** Average daily downloads in the three days before and after each release. */
+  /** Average daily downloads in the three days before a release and the three from its day on. */
   releaseImpact(id: string, full: Pt[]): { version: string; date: string; before: number; after: number }[] {
     const byDate = new Map(full.map((x) => [x.date, x.daily]));
     const seen = new Set<string>(), out: { version: string; date: string; before: number; after: number }[] = [];
@@ -180,8 +196,8 @@ export class Model {
       const day = r.date.slice(0, 10);
       if (seen.has(day)) continue;
       seen.add(day);
-      const before = [-2, -1, 0].map((n) => byDate.get(addDays(day, n)));
-      const after = [1, 2, 3].map((n) => byDate.get(addDays(day, n)));
+      const before = [-3, -2, -1].map((n) => byDate.get(addDays(day, n)));
+      const after = [0, 1, 2].map((n) => byDate.get(addDays(day, n)));
       if ([...before, ...after].some((v) => v == null)) continue;
       out.push({ version: r.version, date: day, before: mean(before as number[]), after: mean(after as number[]) });
     }
@@ -190,7 +206,7 @@ export class Model {
 
   /** Average days between releases over the last 180 days, or null with fewer than two. */
   cadence(id: string): number | null {
-    const since = addDays(new Date().toISOString().slice(0, 10), -180);
+    const since = addDays(todayUtc(), -180);
     const ds = [...new Set((this.store.releases[id] ?? []).map((r) => r.date.slice(0, 10)).filter((d) => d >= since))].sort();
     return ds.length > 1 ? dayDiff(ds[0], ds[ds.length - 1]) / (ds.length - 1) : null;
   }
@@ -211,7 +227,7 @@ export class Model {
   race(me: string, other: string): { gap: number; myPace: number; theirPace: number; days: number | null } | null {
     const a = this.analyze(this.series(me)), b = this.analyze(this.series(other));
     if (!a || !b) return null;
-    const pace = (x: Analysis) => mean(x.d.slice(-14).map((p) => p.daily));
+    const pace = (x: Analysis) => mean(x.d.slice(-14).filter((p) => !p.gap).map((p) => p.daily));
     const myPace = pace(a), theirPace = pace(b);
     const gap = b.total - a.total;
     const closing = gap > 0 ? myPace - theirPace : theirPace - myPace;

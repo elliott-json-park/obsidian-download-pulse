@@ -72,7 +72,7 @@ export class Component {
   registerDomEvent(el, type, fn) { el.addEventListener(type, fn); this._cleanup.push(() => el.removeEventListener(type, fn)); }
 }
 export class MarkdownRenderChild extends Component { constructor(el) { super(); this.containerEl = el; } }
-export const Platform = { isMobile: false, isDesktop: true };
+export const Platform = { isMobile: false, isDesktop: true, isDesktopApp: true };
 export const normalizePath = (p) => p;
 export const requireApiVersion = () => true;
 export const getLanguage = () => new URLSearchParams(location.search).get("lang") || "en";
