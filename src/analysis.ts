@@ -4,10 +4,94 @@ import { addDays, dayDiff, todayUtc } from "./data/store";
 /** Milestones worth naming. */
 export const NICE = [10, 25, 50, 100, 250, 500, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 250000, 500000, 750000, 1000000, 1500000, 2000000, 3000000, 5000000];
 
-export interface Pt { date: string; total: number | null; daily: number | null; rank: number | null; gap: boolean }
-export interface TotalPt { date: string; total: number; daily: number | null; gap: boolean; parts: Record<string, { total: number; daily: number }> }
+/** `stale`: a summed day where some plugin's value was carried forward from a missed day. */
+export interface Pt { date: string; total: number | null; daily: number | null; rank: number | null; gap: boolean; stale?: boolean }
+export interface TotalPt { date: string; total: number; daily: number | null; gap: boolean; stale: boolean; parts: Record<string, { total: number; daily: number }> }
 
 export const mean = (a: number[]): number => a.length ? a.reduce((n, x) => n + x, 0) / a.length : 0;
+
+/** Below this many downloads in the earlier week, a percentage says more about chance than about change. */
+export const SMALL_BASE = 30;
+
+/** The last `days` days of downloads against the `days` before, by calendar day. */
+export interface Momentum {
+  days: number; from: string; to: string;
+  recent: number; before: number | null;
+  /** (recent − before) / before; null without an earlier window or when it had no downloads. */
+  ratio: number | null;
+  /** The change shrunk toward 0 when the numbers are small, so 30 → 60 doesn't outrank 400 → 520 by far. Lists sort by it. */
+  score: number;
+  /** The earlier window had fewer than SMALL_BASE (per week) downloads: show the change in downloads, not a percentage. */
+  small: boolean;
+  /** A window edge fell on a missed day, so the downloads of the gap were spread evenly over it. */
+  estimated: boolean;
+}
+
+/**
+ * Downloads added up day by day, at every day that has a reading. Built from the daily values rather
+ * than the totals, so a plugin joining a sum without its past adds nothing (see `totalSeries`).
+ */
+function cumulative(full: Pt[]): { date: string; c: number }[] {
+  const out: { date: string; c: number }[] = [];
+  let c = 0;
+  for (const p of full) {
+    if (p.daily != null) c += p.daily;
+    else if (out.length) continue;
+    if (p.total == null || p.stale) continue;
+    out.push({ date: p.date, c });
+  }
+  return out;
+}
+
+/** The running count at the end of a day: read, or spread evenly across a missed stretch. Null before the first reading. */
+function countAt(cum: { date: string; c: number }[], date: string): { c: number; est: boolean } | null {
+  let i = cum.length - 1;
+  while (i >= 0 && cum[i].date > date) i--;
+  if (i < 0) return null;
+  if (cum[i].date === date || i === cum.length - 1) return { c: cum[i].c, est: false };
+  const a = cum[i], b = cum[i + 1];
+  return { c: a.c + (b.c - a.c) * dayDiff(a.date, date) / dayDiff(a.date, b.date), est: true };
+}
+
+export function momentumOf(full: Pt[], days = 7): Momentum | null {
+  const cum = cumulative(full);
+  if (cum.length < 2) return null;
+  const end = cum[cum.length - 1], to = end.date;
+  const mid = countAt(cum, addDays(to, -days)), start = countAt(cum, addDays(to, -2 * days));
+  if (!mid) return null;
+  const recent = Math.round(end.c - mid.c);
+  const before = start ? Math.round(mid.c - start.c) : null;
+  const base = SMALL_BASE * days / 7;
+  return {
+    days, from: addDays(to, -days + 1), to, recent, before,
+    ratio: before ? (recent - before) / before : null,
+    score: before == null ? 0 : (recent - before) / (before + base),
+    small: before != null && before < base,
+    estimated: mid.est || !!start?.est,
+  };
+}
+
+/**
+ * Weeks in a row the latest weeks kept rising (positive) or falling (negative), with those weeks' downloads,
+ * oldest first. Calendar weeks counted back from the last reading.
+ */
+export function weekRun(full: Pt[], max = 8): { run: number; weeks: number[] } {
+  const cum = cumulative(full);
+  if (cum.length < 2) return { run: 0, weeks: [] };
+  const to = cum[cum.length - 1].date, weeks: number[] = [];
+  for (let k = 0; k < max; k++) {
+    const a = countAt(cum, addDays(to, -7 * (k + 1))), b = k ? countAt(cum, addDays(to, -7 * k)) : { c: cum[cum.length - 1].c };
+    if (!a || !b) break;
+    weeks.unshift(Math.round(b.c - a.c));
+  }
+  let run = 0;
+  for (let i = weeks.length - 1; i > 0; i--) {
+    const step = Math.sign(weeks[i] - weeks[i - 1]);
+    if (!step || (run && step !== Math.sign(run))) break;
+    run += step;
+  }
+  return { run, weeks };
+}
 export const weekdayOf = (d: string): number => (new Date(d + "T00:00:00Z").getUTCDay() + 6) % 7; // Monday = 0
 
 export function semverCmp(a: string, b: string): number {
@@ -24,7 +108,11 @@ export interface Analysis {
   achieved: { m: number; date: string }[]; next: number | null; prevM: number;
   etaDays: number | null; etaDate: string | null; streak: number;
   weekday: { i: number; avg: number | null; n: number }[]; weekdayReady: boolean;
-  ratio: number | null; lastRank: number | null; momentum: number | null; doubleDays: number | null;
+  ratio: number | null; lastRank: number | null; doubleDays: number | null;
+  /** Last 7 days against the 7 before, and last 28 against the 28 before. */
+  mo: Momentum | null; mo28: Momentum | null;
+  /** Weeks in a row up (+) or down (−), and the weekly downloads behind it. */
+  run: number; weeks: number[];
 }
 
 export interface Standing {
@@ -86,7 +174,7 @@ export class Model {
     const last: Record<string, number | undefined> = {}, carried = new Set<string>(), out: TotalPt[] = [];
     for (let d = first; d <= end; d = addDays(d, 1)) {
       const parts: TotalPt["parts"] = {};
-      let total = 0, daily = 0, gap = false;
+      let total = 0, daily = 0, gap = false, stale = false;
       for (const [id] of all) {
         const prev = last[id];
         const v = maps.get(id)?.get(d);
@@ -95,11 +183,11 @@ export class Model {
         daily += parts[id].daily;
         // A reading after carried-forward days holds several days' downloads.
         if (v != null && carried.has(id)) gap = true;
-        if (v == null && prev != null) carried.add(id); else if (v != null) carried.delete(id);
+        if (v == null && prev != null) { carried.add(id); stale = true; } else if (v != null) carried.delete(id);
         if (v != null || prev != null) last[id] = cur;
         total += cur;
       }
-      out.push({ date: d, total, daily: out.length ? daily : null, gap, parts });
+      out.push({ date: d, total, daily: out.length ? daily : null, gap, stale, parts });
     }
     return out;
   }
@@ -115,8 +203,10 @@ export class Model {
     const prev7 = one(d.slice(-8, -1)), last7 = d.slice(-7), before7 = d.slice(-14, -7);
     const avgPrev = prev7.length >= 3 ? mean(vals(prev7)) : null;
     const pace = mean(vals(one(last7)));
-    const sum7 = last7.reduce((n, x) => n + x.daily, 0);
-    const sumBefore7 = before7.length === 7 ? before7.reduce((n, x) => n + x.daily, 0) : null;
+    // By calendar day, with missed days spread evenly; a history shorter than a week falls back to what there is.
+    const mo = momentumOf(full, 7), mo28 = momentumOf(full, 28), { run, weeks } = weekRun(full);
+    const sum7 = mo ? mo.recent : last7.reduce((n, x) => n + x.daily, 0);
+    const sumBefore7 = mo ? mo.before : before7.length === 7 ? before7.reduce((n, x) => n + x.daily, 0) : null;
     // Readings after missed days hold several days' downloads; they can't be anyone's best day.
     const best = d.reduce<(Pt & { daily: number }) | null>((b, x) => !x.gap && (!b || x.daily > b.daily) ? x : b, null);
     const total = known[known.length - 1].total as number, lastDate = known[known.length - 1].date;
@@ -142,10 +232,9 @@ export class Model {
     const weekday = wd.map((a, i) => ({ i, avg: a.length ? mean(a) : null, n: a.length }));
 
     return {
-      full, d, last, avgPrev, pace, sum7, sumBefore7, best, total, lastDate, achieved, next, prevM, etaDays, streak, weekday,
+      full, d, last, avgPrev, pace, sum7, sumBefore7, best, total, lastDate, achieved, next, prevM, etaDays, streak, weekday, mo, mo28, run, weeks,
       ratio: lastOne && avgPrev ? lastOne.daily / avgPrev : null,
       lastRank: lastOne ? 1 + d.filter((x) => !x.gap && x.daily > lastOne.daily).length : null,
-      momentum: sumBefore7 ? (sum7 - sumBefore7) / sumBefore7 : null,
       etaDate: etaDays != null ? addDays(lastDate, etaDays) : null,
       doubleDays: half && (half.total as number) > 0 ? dayDiff(half.date, lastDate) : null,
       weekdayReady: recent.length >= 14,
@@ -204,20 +293,28 @@ export class Model {
     return out;
   }
 
-  /** Average days between releases over the last 180 days, or null with fewer than two. */
+  /**
+   * Average days per release over the last 180 days, counted from the first of them up to today — so a burst of
+   * releases months ago followed by silence doesn't read as "every 2 days". Null with fewer than two.
+   */
   cadence(id: string): number | null {
-    const since = addDays(todayUtc(), -180);
+    const today = todayUtc(), since = addDays(today, -180);
     const ds = [...new Set((this.store.releases[id] ?? []).map((r) => r.date.slice(0, 10)).filter((d) => d >= since))].sort();
-    return ds.length > 1 ? dayDiff(ds[0], ds[ds.length - 1]) / (ds.length - 1) : null;
+    return ds.length > 1 ? Math.max(dayDiff(ds[0], ds[ds.length - 1]) / (ds.length - 1), dayDiff(ds[0], today) / ds.length) : null;
   }
 
+  /** Downloads over the last `days` calendar days (or since the first reading, if that's sooner). */
   gainOver(series: Pt[], days: number): number | null {
-    const known = series.filter((s) => s.total != null);
-    if (known.length < 2) return null;
-    const last = known[known.length - 1];
-    const cutoff = addDays(last.date, -days);
-    const base = [...known].reverse().find((s) => s.date <= cutoff) ?? known[0];
-    return (last.total as number) - (base.total as number);
+    const cum = cumulative(series);
+    if (cum.length < 2) return null;
+    const end = cum[cum.length - 1];
+    const base = countAt(cum, addDays(end.date, -days)) ?? { c: 0 };
+    return Math.round(end.c - base.c);
+  }
+
+  /** Several plugins summed per day, analysed like one. */
+  analyzeTotal(total: TotalPt[]): Analysis | null {
+    return this.analyze(total.map((x) => ({ date: x.date, total: x.total, daily: x.daily, rank: null, gap: x.gap, stale: x.stale })));
   }
 
   /**

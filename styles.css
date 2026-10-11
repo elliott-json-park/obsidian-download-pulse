@@ -74,9 +74,12 @@
 .pp-hero-line { font-size: 16px; margin: 0 0 6px; color: var(--pp-ink-2); }
 .pp-hero-line b, .pp-chip b, .pp-ms-head b { color: var(--pp-ink-1); font-weight: 620; }
 .pp-chips { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 30px; font-size: 14px; color: var(--pp-ink-2); }
-.pp-delta { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; color: var(--pp-ink-2); }
+.pp-delta { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; color: var(--pp-ink-2); white-space: nowrap; }
 .pp-delta.is-up { color: var(--pp-up); }
 .pp-delta.is-down { color: var(--pp-down); }
+/* Strength: under ±10% plain, under ±30% bold, beyond that on a tinted pill. A count (small numbers) stays plain. */
+.pp-delta.is-s1 { font-weight: 500; }
+.pp-delta.is-s3 { font-weight: 680; padding: 0 6px; border-radius: 99px; background: color-mix(in srgb, currentColor 13%, transparent); }
 .pp-ms-head { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--pp-ink-3); margin-bottom: 6px; max-width: 420px; }
 .pp-ms-track { position: relative; height: 2px; border-radius: 99px; background: var(--pp-grid); max-width: 420px; }
 .pp-ms-fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 99px; background: var(--pp-ink-1); transition: width 1.2s var(--pp-ease) .2s; }
@@ -99,6 +102,11 @@
 .pp-tile-sub { color: var(--pp-ink-3); font-size: 12px; min-height: 18px; }
 .pp-spark { display: block; width: 100%; height: 26px; margin-top: 8px; overflow: visible; }
 .pp-spark-line { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+/* Two weeks side by side, as momentum compares them: the earlier one faded, each with its daily average dashed. */
+.pp-spark.is-split rect.is-before { opacity: .38; }
+.pp-spark-split { stroke: var(--pp-axis); stroke-width: 1; stroke-dasharray: 2 2; }
+.pp-spark-avg { stroke-width: 1.5; stroke-dasharray: 3 2; }
+.pp-spark-avg.is-before { opacity: .55; }
 
 /* ---------- cards ---------- */
 .pp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -169,11 +177,50 @@
 .pp-root th, .pp-root td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--pp-grid); white-space: nowrap; }
 .pp-root th:first-child, .pp-root td:first-child { text-align: left; }
 .pp-root td:first-child { display: flex; align-items: center; gap: 6px; }
-.pp-root th { color: var(--pp-ink-2); font-weight: 600; position: sticky; top: 0; background: var(--pp-surface); }
+.pp-root th { color: var(--pp-ink-2); font-weight: 600; position: sticky; top: 0; z-index: 1; background: var(--pp-surface); }
+.pp-root tfoot td { border-top: 1px solid var(--pp-axis); border-bottom: 0; }
+.pp-sort { border: 0; background: none; box-shadow: none; height: auto; padding: 0; font: inherit; color: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.pp-sort:hover { color: var(--pp-ink-1); background: none; }
+.pp-sort::after { content: "↕"; font-size: 10px; opacity: .35; }
+th[aria-sort="descending"] .pp-sort::after { content: "↓"; opacity: 1; }
+th[aria-sort="ascending"] .pp-sort::after { content: "↑"; opacity: 1; }
+th.is-sorted { color: var(--pp-ink-1); }
+/* momentum in a table: a bar from the middle, up to the right, down to the left */
+.pp-mbar { position: relative; display: inline-block; vertical-align: middle; width: 46px; height: 8px; margin-right: 8px; border-radius: 2px; background: var(--pp-grid); }
+.pp-mbar::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--pp-ink-3); }
+.pp-mbar-fill { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+.pp-mbar-fill.is-up { background: var(--pp-up); }
+.pp-mbar-fill.is-down { background: var(--pp-down); }
+.pp-mbar.is-small .pp-mbar-fill { background: none; box-shadow: inset 0 0 0 1px currentColor; }
+.pp-mbar.is-small .pp-mbar-fill.is-up { color: var(--pp-up); }
+.pp-mbar.is-small .pp-mbar-fill.is-down { color: var(--pp-down); }
+.pp-mtext { display: inline-block; min-width: 64px; text-align: left; }
 .pp-table-scroll { max-height: 360px; overflow: auto; margin-top: 10px; }
 .pp-root details summary { cursor: pointer; color: var(--pp-ink-3); font-size: 12.5px; }
 .pp-note { color: var(--pp-ink-3); font-size: 12px; margin: 16px 2px 0; line-height: 1.6; }
 .pp-note p { margin: 8px 0 0; }
+
+/* momentum map */
+.pp-quad { padding: 4px 0 0 44px; }
+.pp-quad-plot { position: relative; height: 300px; border-left: 1px solid var(--pp-grid); border-bottom: 1px solid var(--pp-grid); }
+.pp-quad-tick { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--pp-grid); }
+.pp-quad-tick.is-zero { border-top: 1px solid var(--pp-axis); }
+.pp-quad-tick span { position: absolute; right: calc(100% + 8px); top: -8px; font-size: 11px; color: var(--pp-ink-3); white-space: nowrap; }
+.pp-quad-mid { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--pp-axis); }
+.pp-quad-q { position: absolute; font-size: 11.5px; color: var(--pp-ink-3); letter-spacing: .01em; pointer-events: none; }
+.pp-quad-q.is-tl { top: 4px; left: 8px; } .pp-quad-q.is-tr { top: 4px; right: 8px; }
+.pp-quad-q.is-bl { bottom: 4px; left: 8px; } .pp-quad-q.is-br { bottom: 4px; right: 8px; }
+.pp-quad-group { position: absolute; left: 0; right: 0; height: 0; border-top: 1.5px dashed var(--pp-ink-3); }
+.pp-quad-dot { position: absolute; left: 50%; top: 50%; z-index: 2; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--pp-c); box-shadow: 0 0 0 2px var(--pp-card); transition: left 1s var(--pp-ease), top 1s var(--pp-ease); transition-delay: calc(var(--pp-d) * 70ms + .1s); }
+.pp-quad-dot.is-me { width: 16px; height: 16px; margin: -8px 0 0 -8px; box-shadow: 0 0 0 2px var(--pp-card), 0 0 0 4px var(--pp-c); }
+.pp-quad-dot.is-small { background: var(--pp-card); box-shadow: inset 0 0 0 2px var(--pp-c), 0 0 0 2px var(--pp-card); }
+.pp-quad-dot.is-small.is-me { box-shadow: inset 0 0 0 2px var(--pp-c), 0 0 0 2px var(--pp-card), 0 0 0 4px var(--pp-c); }
+.pp-quad-label { position: absolute; left: 0; top: 0; z-index: 1; white-space: nowrap; font-size: 12px; color: var(--pp-ink-2); opacity: 0; transition: opacity .4s ease; transition-delay: calc(var(--pp-d) * 70ms + .9s); pointer-events: none; }
+.pp-quad-label.is-me { color: var(--pp-ink-1); font-weight: 620; }
+.pp-quad-label.is-on { opacity: 1; }
+.pp-quad-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--pp-ink-3); }
+.pp-quad-note { margin-top: 8px; }
+.pp-quad-legend { margin: 10px 0 0; }
 
 /* empty states */
 .pp-onboard, .pp-empty { max-width: 640px; margin: 24px auto; padding: 28px 30px; }
@@ -206,6 +253,9 @@
   .pp-ins, .pp-tile { flex-basis: 100%; }
   .pp-card { padding: 16px; }
   .pp-rel-row { grid-template-columns: 90px 1fr 24px; }
+  .pp-quad { padding-left: 38px; }
+  .pp-quad-plot { height: 260px; }
+  .pp-quad-q { font-size: 10.5px; }
 }
 
 /* ---------- motion off ----------
@@ -216,6 +266,7 @@
 .pp-root.pp-still .pp-rv .pp-spark { opacity: 1; transition: none; }
 .pp-root.pp-still .pp-cell { opacity: 1; }
 .pp-root.pp-still .pp-stop::before { transform: scaleX(1); }
+.pp-root.pp-still .pp-quad-label.is-on { opacity: 1; }
 
 /* ---------- sidebar glance & code block ---------- */
 .workspace-leaf-content[data-type="plugin-pulse-glance"] .view-content.pp-glance { padding: 12px 14px 24px; }

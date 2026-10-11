@@ -378,6 +378,86 @@ test("engine: a day that failed to download is tried again", async () => {
   assert.equal(getPoint(h.store, "a", "2026-09-11")?.downloads, 15);
 });
 
+// ---------- 1.3: momentum ----------
+/** One reading per file day; `daily[i]` downloads happen on file day i (the first value is the opening total). */
+function byDay(s: Store, id: string, start: string, daily: number[], from = 100) {
+  let total = from;
+  daily.forEach((v, i) => { total += v; setPoint(s, id, addDays(start, i), total); });
+}
+
+test("momentum compares the last 7 calendar days with the 7 before", () => {
+  const s = emptyStore();
+  byDay(s, "a", "2026-09-01", [...Array(7).fill(0), ...Array(7).fill(4), ...Array(7).fill(6)]);
+  const mo = new Model(s).analyze(new Model(s).series("a"))?.mo;
+  assert.ok(mo);
+  assert.equal(mo.recent, 42);
+  assert.equal(mo.before, 28);
+  assert.equal(mo.small, true, "28 < 30 a week: a count, not a percentage");
+  assert.equal(Math.round((mo.ratio as number) * 100), 50);
+  assert.equal(mo.estimated, false);
+});
+
+test("momentum spreads a missed day on a window edge evenly and says so", () => {
+  const s = emptyStore();
+  byDay(s, "a", "2026-09-01", Array(21).fill(10));
+  s.series.a.d[s.series.a.d.length - 8] = null; // the reading exactly on the edge between the two weeks
+  const mo = new Model(s).analyze(new Model(s).series("a"))?.mo;
+  assert.ok(mo);
+  assert.equal(mo.recent, 70);
+  assert.equal(mo.before, 70);
+  assert.equal(mo.estimated, true);
+  assert.equal(mo.ratio, 0);
+});
+
+test("momentum needs two full weeks; the 7-day sum still shows with one", () => {
+  const s = emptyStore();
+  byDay(s, "a", "2026-09-01", Array(10).fill(5));
+  const A = new Model(s).analyze(new Model(s).series("a"));
+  assert.ok(A);
+  assert.equal(A.mo?.before, null);
+  assert.equal(A.sum7, 35);
+});
+
+test("small numbers are flagged as counts and shrunk toward 0 for sorting", () => {
+  const s = emptyStore();
+  byDay(s, "tiny", "2026-09-01", [0, ...Array(7).fill(1), ...Array(7).fill(3)]);
+  byDay(s, "few", "2026-09-01", [0, ...Array(7).fill(5), ...Array(7).fill(10)]);
+  byDay(s, "big", "2026-09-01", [0, ...Array(7).fill(60), ...Array(7).fill(78)]);
+  const m = new Model(s);
+  const [tiny, few, big] = ["tiny", "few", "big"].map((id) => m.analyze(m.series(id))?.mo);
+  assert.ok(tiny && few && big);
+  assert.equal(tiny.small, true, "7 the week before: shown as a count");
+  assert.ok(!few.small && !big.small);
+  assert.ok(tiny.score < (tiny.ratio as number) / 4, "200% shrinks well below");
+  assert.ok((few.ratio as number) > (big.ratio as number) && few.score > big.score * 0.9, "35 → 70 still reads as strong");
+});
+
+test("a plugin joining a sum without its past adds nothing to the sum's momentum or 30 days", () => {
+  const s = emptyStore();
+  linear(s, "a", "2026-09-01", 30, 100, 10);
+  linear(s, "big", "2026-09-25", 6, 10000, 30);
+  const m = new Model(s), tot = m.totalSeries(["a", "big"]), A = m.analyzeTotal(tot);
+  assert.ok(A?.mo);
+  assert.ok(A.mo.recent < 1000, `recent ${A.mo.recent}`);
+  assert.ok((m.gainOver(A.full, 30) ?? 0) < 1000);
+});
+
+test("weekRun counts weeks in a row going the same way", () => {
+  const s = emptyStore();
+  byDay(s, "a", "2026-08-01", [0, ...[10, 10, 20, 30, 40].flatMap((w) => Array(7).fill(w / 7))]);
+  const A = new Model(s).analyze(new Model(s).series("a"));
+  assert.ok(A);
+  assert.deepEqual(A.weeks, [10, 10, 20, 30, 40]);
+  assert.equal(A.run, 3);
+});
+
+test("cadence counts the quiet time since the last release", () => {
+  const s = emptyStore();
+  const today = new Date().toISOString().slice(0, 10);
+  s.releases.a = [0, 2, 4].map((n, i) => ({ version: `1.0.${i}`, date: addDays(today, -90 + n) + "T00:00:00Z" }));
+  assert.equal(new Model(s).cadence("a"), 30, "three releases in a burst 90 days ago: every 30 days, not every 2");
+});
+
 // ---------- optional: the real dashboard history on this machine ----------
 const real = process.env.DASHBOARD_HISTORY;
 if (real && existsSync(real)) {

@@ -4,11 +4,11 @@ import { Model } from "../analysis";
 import { addDays } from "../data/store";
 import { t } from "../i18n";
 import { readPalette } from "./charts";
-import { delta, fmt, rich, signed, sharedMax, sparkBars, swatch } from "./util";
+import { fmt, moText, moTip, rich, signed, sharedMax, sparkBars, swatch, Tip } from "./util";
 
 export const GLANCE_VIEW = "plugin-pulse-glance";
 
-interface ListOpts { days: number; rivalsOf?: string; onOpen?: (id: string) => void }
+interface ListOpts { days: number; rivalsOf?: string; onOpen?: (id: string) => void; tip?: Tip }
 
 /**
  * The compact form shared by the sidebar and the code block: one row per plugin with its total,
@@ -26,11 +26,12 @@ export function renderList(el: HTMLElement, plugin: PulsePlugin, ids: string[], 
 
   if (shown.length > 1 && !o.rivalsOf) {
     const total = m.totalSeries(shown);
-    const A = m.analyze(total.map((x) => ({ date: x.date, total: x.total, daily: x.daily, rank: null, gap: x.gap })));
+    const A = m.analyzeTotal(total);
     if (A) {
       const sum = el.createDiv({ cls: "pp-g-sum" });
       sum.createDiv({ cls: "pp-g-big", text: fmt(A.total) });
-      rich(sum.createDiv({ cls: "pp-g-line" }), `${t().latestShort} **${signed(A.last?.daily)}** · ${t().days7} **${signed(A.sum7)}** ${delta(A.momentum)}`);
+      const line = rich(sum.createDiv({ cls: "pp-g-line" }), `${t().latestShort} **${signed(A.last?.daily)}** · ${t().days7} **${signed(A.sum7)}** ${moText(A.mo)}`);
+      o.tip?.bind(line, moTip(A.mo, A), false);
     }
   }
 
@@ -45,7 +46,8 @@ export function renderList(el: HTMLElement, plugin: PulsePlugin, ids: string[], 
     head.createDiv({ cls: "pp-g-total", text: a ? fmt(a.total) : "–" });
     if (!a) { row.createDiv({ cls: "pp-g-sub", text: t().pendingTitle }); return; }
     const st = m.standing(id);
-    rich(row.createDiv({ cls: "pp-g-sub" }), `${t().latestShort} **${signed(a.last?.daily)}** · ${t().days7} ${signed(a.sum7)} ${delta(a.momentum)}` + (st ? ` · ${t().rankChip(fmt(st.rank))}` : ""));
+    const sub = rich(row.createDiv({ cls: "pp-g-sub" }), `${t().latestShort} **${signed(a.last?.daily)}** · ${t().days7} ${signed(a.sum7)} ${moText(a.mo)}` + (st ? ` · ${t().rankChip(fmt(st.rank))}` : ""));
+    o.tip?.bind(sub, moTip(a.mo, { ...a, name: plugin.settings.meta[id]?.name ?? id }), false);
     sparkBars(row, dailyOf(id), color(id, i), barMax);
 
     // One line on how it stands against its competitors.
@@ -63,6 +65,7 @@ export function renderList(el: HTMLElement, plugin: PulsePlugin, ids: string[], 
 export class GlanceView extends ItemView {
   private body!: HTMLElement;
   private dot!: HTMLElement;
+  private tip: Tip | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: PulsePlugin) { super(leaf); }
   getViewType(): string { return GLANCE_VIEW; }
@@ -73,6 +76,8 @@ export class GlanceView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("pp-root", "pp-glance");
+    this.tip?.disconnect();
+    this.tip = new Tip(root);
     const head = root.createDiv({ cls: "pp-g-top" });
     head.createDiv({ cls: "pp-g-title", text: t().glanceTitle });
     this.dot = head.createSpan({ cls: "pp-live-dot" });
@@ -90,6 +95,8 @@ export class GlanceView extends ItemView {
     this.status();
     this.draw();
   }
+
+  async onClose(): Promise<void> { this.tip?.disconnect(); this.tip = null; }
 
   private status() {
     const s = this.plugin.engine.status.state;
@@ -112,7 +119,7 @@ export class GlanceView extends ItemView {
       this.body.createEl("button", { cls: "mod-cta", text: t().cmdAdd, attr: { type: "button" } }).addEventListener("click", () => void this.plugin.openDashboard());
       return;
     }
-    renderList(this.body, this.plugin, mine, { days: 14, onOpen: (id) => void this.plugin.openDashboard(id) });
+    renderList(this.body, this.plugin, mine, { days: 14, onOpen: (id) => void this.plugin.openDashboard(id), tip: this.tip ?? undefined });
   }
 }
 
@@ -124,12 +131,16 @@ export class GlanceView extends ItemView {
  * ```
  */
 export class PulseBlock extends MarkdownRenderChild {
+  private tip: Tip | null = null;
   constructor(el: HTMLElement, private plugin: PulsePlugin, private source: string) { super(el); }
 
   onload(): void {
+    this.tip = new Tip(this.containerEl);
     this.draw();
     this.registerEvent(this.plugin.engine.on("changed", () => this.draw()));
   }
+
+  onunload(): void { this.tip?.disconnect(); this.tip = null; }
 
   private draw() {
     const el = this.containerEl;
@@ -150,6 +161,6 @@ export class PulseBlock extends MarkdownRenderChild {
     const days = Math.max(7, Math.min(60, parseInt(opts.days ?? "14", 10) || 14));
     const rivals = /^(true|yes|1)$/i.test(opts.rivals ?? "") && ids.length === 1;
     const list = rivals ? [ids[0], ...(this.plugin.settings.competitors[ids[0]] ?? [])] : ids;
-    renderList(el, this.plugin, list, { days, rivalsOf: rivals ? ids[0] : undefined, onOpen: (id) => void this.plugin.openDashboard(mine.includes(id) ? id : ids[0], rivals ? "rivals" : undefined) });
+    renderList(el, this.plugin, list, { days, rivalsOf: rivals ? ids[0] : undefined, onOpen: (id) => void this.plugin.openDashboard(mine.includes(id) ? id : ids[0], rivals ? "rivals" : undefined), tip: this.tip ?? undefined });
   }
 }

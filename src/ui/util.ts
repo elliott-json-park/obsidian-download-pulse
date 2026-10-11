@@ -1,4 +1,6 @@
 import { loc, t } from "../i18n";
+import { addDays } from "../data/store";
+import { SMALL_BASE, type Momentum } from "../analysis";
 
 // ---------- numbers & dates ----------
 export const fmt = (n: number | null | undefined): string => n == null || !isFinite(n) ? "–" : Math.round(n).toLocaleString(loc());
@@ -6,23 +8,55 @@ export const fmt1 = (n: number | null | undefined): string => n == null || !isFi
 export const signed = (n: number | null | undefined): string => n == null || !isFinite(n) ? "–" : (n > 0 ? "+" : "") + Math.round(n).toLocaleString(loc());
 export const shortDate = (d: string): string => `${+d.slice(5, 7)}/${+d.slice(8, 10)}`;
 export const longDate = (d: string): string => t().longDate(+d.slice(5, 7), +d.slice(8, 10));
-/** ▲ 12% as rich-text markup, or "" when there is nothing to compare. */
+/** How strong a change reads: 1 under ±10%, 2 under ±30%, 3 beyond. */
+const level = (ratio: number): number => Math.abs(ratio) < 0.1 ? 1 : Math.abs(ratio) < 0.3 ? 2 : 3;
+/**
+ * ▲ 12% as rich-text markup in three strengths, "steady" when it rounds to 0%, or "" when there is nothing to compare.
+ * Tripled or more reads as a multiple (▲ 4.2×): "▲ 320%" is easy to misread as 3.2×.
+ */
 export function delta(ratio: number | null | undefined): string {
   if (ratio == null || !isFinite(ratio)) return "";
   const pct = Math.round(Math.abs(ratio) * 100);
-  return ratio > 0.005 ? `{up|▲ ${pct}%}` : ratio < -0.005 ? `{down|▼ ${pct}%}` : `{flat|– ${pct}%}`;
+  if (!pct) return `{flat|${t().steady}}`;
+  const text = ratio >= 2 ? t().timesX(fmt1(1 + ratio)) : `${pct.toLocaleString(loc())}%`;
+  return `{${ratio > 0 ? "up" : "down"}${level(ratio)}|${ratio > 0 ? "▲" : "▼"} ${text}}`;
+}
+/**
+ * A momentum as rich text. A small earlier week shows the change as a count (▲ +12), since 3 → 9 as "▲ 200%"
+ * would say more about chance than about change. "" without two full windows to compare.
+ */
+export function moText(mo: Momentum | null | undefined): string {
+  if (!mo || mo.before == null) return "";
+  if (!mo.small) return delta(mo.ratio);
+  const diff = mo.recent - mo.before;
+  return !diff ? `{flat|${t().steady}}` : `{${diff > 0 ? "up" : "down"}1|${diff > 0 ? "▲" : "▼"} ${signed(diff)}}`;
+}
+/** What a momentum compares, for its tooltip. */
+export function moTip(mo: Momentum | null | undefined, extra: { mo28?: Momentum | null; run?: number; name?: string } = {}): string {
+  const range = (a: string, b: string) => `${longDate(a)} – ${longDate(b)}`;
+  const head = (extra.name ? `**${extra.name}** · ` : "") + t().moTipTitle(mo?.days ?? 7);
+  if (!mo || mo.before == null) return [head, t().moTipShort].join("\n");
+  const lines = [head,
+    `${range(mo.from, mo.to)}  **${fmt(mo.recent)}**`,
+    `${range(addDays(mo.from, -mo.days), addDays(mo.to, -mo.days))}  ${fmt(mo.before)}`,
+    `${t().moTipChange}  ${moText(mo)}` + (mo.small ? "" : `  (${signed(mo.recent - mo.before)})`)];
+  if (mo.small) lines.push(t().moTipSmall(SMALL_BASE));
+  if (mo.estimated) lines.push(t().moTipEst);
+  const more = [extra.mo28?.before != null ? t().moTip28(moText(extra.mo28)) : "", extra.run && Math.abs(extra.run) >= 2 ? (extra.run > 0 ? t().runUp(extra.run) : t().runDown(-extra.run)) : ""].filter(Boolean);
+  if (more.length) lines.push(more.join(" · "));
+  return lines.join("\n");
 }
 export const pct1 = (x: number): string => `${fmt1(x * 100)}%`;
 
 // ---------- safe rich text ----------
-/** Appends text with **bold** and {up|…}/{down|…}/{flat|…} markup as DOM nodes. Never parses HTML. */
+/** Appends text with **bold** and {up|…}/{down2|…}/{flat|…} markup (the digit is a strength, 1–3) as DOM nodes. Never parses HTML. */
 export function rich(parent: HTMLElement, text: string): HTMLElement {
-  const re = /\*\*(.+?)\*\*|\{(up|down|flat)\|(.+?)\}|\n/g;
+  const re = /\*\*(.+?)\*\*|\{(up|down|flat)([123])?\|(.+?)\}|\n/g;
   let last = 0, m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     if (m.index > last) parent.appendText(text.slice(last, m.index));
     if (m[1] != null) parent.createEl("b", { text: m[1] });
-    else if (m[2]) parent.createSpan({ cls: `pp-delta ${m[2] === "flat" ? "" : "is-" + m[2]}`, text: m[3] });
+    else if (m[2]) parent.createSpan({ cls: ["pp-delta", m[2] === "flat" ? "" : "is-" + m[2], m[3] ? "is-s" + m[3] : ""].filter(Boolean).join(" "), text: m[4] });
     else parent.createEl("br");
     last = re.lastIndex;
   }
@@ -192,16 +226,27 @@ export function sharedMax(rows: (number | null)[][]): number | null {
   return hi / lo <= 10 ? hi : null;
 }
 
-/** Bars per day. Passing the same `max` to several makes their sizes comparable too. */
-export function sparkBars(parent: HTMLElement, values: (number | null)[], color: string, max = Math.max(1, ...values.map((v) => v ?? 0))): void {
+/**
+ * Bars per day. Passing the same `max` to several makes their sizes comparable too.
+ * `avg` splits the bars in two equal windows, as momentum compares them: the earlier one faded,
+ * a divider between, and each window's daily average as a dashed line across it.
+ */
+export function sparkBars(parent: HTMLElement, values: (number | null)[], color: string, max = Math.max(1, ...values.map((v) => v ?? 0)), avg?: [number, number]): void {
   if (!values.length) return;
-  const w = 100 / values.length;
-  const svg = parent.createSvg("svg", { cls: "pp-spark", attr: { viewBox: "0 0 100 30", preserveAspectRatio: "none", "aria-hidden": "true" } });
+  const w = 100 / values.length, half = Math.floor(values.length / 2);
+  if (avg) max = Math.max(max, ...avg);
+  const svg = parent.createSvg("svg", { cls: "pp-spark" + (avg ? " is-split" : ""), attr: { viewBox: "0 0 100 30", preserveAspectRatio: "none", "aria-hidden": "true" } });
+  const y = (v: number) => (30 - Math.max(0.8, v / max * 29)).toFixed(2);
   values.forEach((v, i) => {
     if (v == null) return;
     const h = Math.max(0.8, v / max * 29);
-    svg.createSvg("rect", { attr: { x: (i * w + w * 0.15).toFixed(2), width: (w * 0.7).toFixed(2), y: (30 - h).toFixed(2), height: h.toFixed(2), fill: color } });
+    svg.createSvg("rect", { ...(avg && i < half ? { cls: "is-before" } : {}), attr: { x: (i * w + w * 0.15).toFixed(2), width: (w * 0.7).toFixed(2), y: (30 - h).toFixed(2), height: h.toFixed(2), fill: color } });
   });
+  if (!avg) return;
+  const line = (x1: number, x2: number, v: number, cls: string) => svg.createSvg("line", { cls, attr: { x1, x2, y1: y(v), y2: y(v), stroke: color, "vector-effect": "non-scaling-stroke" } });
+  svg.createSvg("line", { cls: "pp-spark-split", attr: { x1: half * w, x2: half * w, y1: 0, y2: 30, "vector-effect": "non-scaling-stroke" } });
+  line(0, half * w, avg[0], "pp-spark-avg is-before");
+  line(half * w, 100, avg[1], "pp-spark-avg");
 }
 
 export function swatch(parent: HTMLElement, color: string): HTMLElement {

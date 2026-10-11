@@ -1,6 +1,6 @@
 import { ItemView, setIcon, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type PulsePlugin from "../main";
-import { Model, mean, semverCmp, weekdayOf, type Analysis, type Pt } from "../analysis";
+import { Model, SMALL_BASE, mean, semverCmp, weekdayOf, type Analysis, type Momentum, type Pt } from "../analysis";
 import { addDays, dayDiff, todayUtc } from "../data/store";
 import { loc, t } from "../i18n";
 import type { Range, UiState } from "../types";
@@ -10,7 +10,7 @@ import {
   type Palette, type Marker, type Cfg, type Ds, type TI,
 } from "./charts";
 import { Orrery } from "./orrery";
-import { fmt, fmt1, signed, delta, shortDate, longDate, rich, Tip, Revealer, countUp, sparkline, sparkBars, swatch, alpha, pct1, sharedMax } from "./util";
+import { fmt, fmt1, signed, delta, moText, moTip, shortDate, longDate, rich, Tip, Revealer, countUp, sparkline, sparkBars, swatch, alpha, rgba, pct1, sharedMax } from "./util";
 import { authorSearch } from "./modals";
 
 export const DASHBOARD_VIEW = "plugin-pulse-dashboard";
@@ -19,7 +19,10 @@ export const DASHBOARD_VIEW = "plugin-pulse-dashboard";
 const ARCHIVE_EPOCH = "2020-10-31";
 
 interface Insight { k: string; t: string; b: string }
-interface Tile { label: string; color?: string; value: number | string; prefix?: string; pre?: string; unit?: string; sub?: string; spark?: (number | null)[]; bars?: (number | null)[]; barMax?: number }
+interface Tile { label: string; color?: string; value: number | string; prefix?: string; pre?: string; unit?: string; sub?: string; spark?: (number | null)[]; bars?: (number | null)[]; barMax?: number; avg?: [number, number]; tip?: string }
+/** A table cell: its text, what it sorts by (higher first; text A→Z) and a tooltip, or a renderer of its own. */
+interface Cell { text: string; sort?: number | string | null; tip?: string; render?: (td: HTMLElement) => void }
+type Row = (string | Cell)[];
 interface CardOpts { title: string; desc?: string; wide?: boolean; tall?: boolean; height?: number; legend?: { name: string; color?: string; cls?: string }[] | null }
 
 export class DashboardView extends ItemView {
@@ -151,14 +154,24 @@ export class DashboardView extends ItemView {
     this.colors.clear();
     const S = this.P.series, mine = this.plugin.settings.mine;
     mine.forEach((id, i) => this.colors.set(id, S[i % S.length]));
-    // Competitors take the colors their plugin isn't using, in order.
-    let k = 0;
+    // Competitors take, in order, the colors no tab is showing; then those nothing on screen uses; past that,
+    // a faded copy, so two lines never look the same.
+    const shown = new Set(ids.filter((x) => this.colors.has(x)).map((x) => this.colors.get(x)));
+    const tabs = new Set(mine.map((x) => this.colors.get(x)));
+    const free = S.filter((x) => !tabs.has(x));
+    let extra = 0;
     for (const id of ids) {
       if (this.colors.has(id)) continue;
-      const used = new Set(ids.filter((x) => this.colors.has(x)).map((x) => this.colors.get(x)));
-      for (let tries = 0; tries < S.length && used.has(S[k % S.length]); tries++) k++;
-      this.colors.set(id, S[k++ % S.length]);
+      const c = S.find((x) => !shown.has(x) && !tabs.has(x)) ?? S.find((x) => !shown.has(x));
+      const pick = c ?? this.blend((free.length ? free : S)[extra++ % (free.length || S.length)], this.P.surface);
+      shown.add(pick);
+      this.colors.set(id, pick);
     }
+  }
+  /** A color a third of the way to the background, opaque — so charts that add their own transparency still tell it apart. */
+  private blend(c: string, bg: string): string {
+    const [r, g, b] = rgba(c), [R, G, B] = rgba(bg), mix = (x: number, y: number) => Math.round(x * 0.62 + y * 0.38);
+    return `rgb(${mix(r, R)}, ${mix(g, G)}, ${mix(b, B)})`;
   }
   private clip<T extends { date: string }>(series: T[]): T[] {
     if (this.ui.range === "all" || !series.length) return series;
@@ -315,7 +328,8 @@ export class DashboardView extends ItemView {
       const extra = record ? t().allTimeBest : A.ratio != null && A.ratio >= 1.15 ? t().timesUsual(fmt1(A.ratio)) : A.ratio != null && A.ratio <= 0.85 ? t().quieter : "";
       rich(heroLine, t().latestDay(day) + (extra ? " · " + extra : "") + (A.last.gap ? t().missedDay : ""));
     }
-    rich(heroChips.createSpan({ cls: "pp-chip" }), `${t().days7} **${signed(A.sum7)}** ${delta(A.momentum)}`);
+    const chip = rich(heroChips.createSpan({ cls: "pp-chip" }), `${t().days7} **${signed(A.sum7)}** ${moText(A.mo)}`);
+    this.tip.bind(chip, moTip(A.mo, A));
     if (scope.id) {
       const st = this.m.standing(scope.id);
       if (st) rich(heroChips.createSpan({ cls: "pp-chip" }), `**${t().rankChip(fmt(st.rank))}**` + (st.climbed7 && st.climbed7 > 0 ? ` {up|▲ ${fmt(st.climbed7)}}` : ""));
@@ -355,6 +369,7 @@ export class DashboardView extends ItemView {
     const el = this.els.body.createDiv({ cls: "pp-tiles" });
     (list.filter(Boolean) as Tile[]).slice(0, max).forEach((x, i) => {
       const d = el.createDiv({ cls: "pp-tile" });
+      if (x.tip) this.tip.bind(d, x.tip);
       const label = d.createDiv({ cls: "pp-tile-label" });
       if (x.color) swatch(label, x.color);
       label.appendText(x.label);
@@ -365,7 +380,7 @@ export class DashboardView extends ItemView {
         if (x.unit) value.appendText(x.unit);
       } else value.setText(x.value);
       rich(d.createDiv({ cls: "pp-tile-sub" }), x.sub ?? "");
-      if (x.bars) sparkBars(d, x.bars, x.color || this.P.ink2, x.barMax);
+      if (x.bars) sparkBars(d, x.bars, x.color || this.P.ink2, x.barMax, x.avg);
       else if (x.spark) sparkline(d, x.spark, x.color || this.P.ink2);
       this.revealer.add(d, i);
     });
@@ -386,7 +401,7 @@ export class DashboardView extends ItemView {
       for (const l of o.legend) {
         const s = lg.createSpan();
         if (l.cls) s.createSpan({ cls: "pp-legend-" + l.cls }); else swatch(s, l.color ?? this.P.ink2);
-        s.appendText(l.name);
+        rich(s, l.name);
       }
     }
     return el;
@@ -409,27 +424,72 @@ export class DashboardView extends ItemView {
     return el;
   }
 
-  private tableCard(head: string[], rows: string[][], title?: string, desc?: string, open = false) {
+  /** How each sortable table was last sorted, so a refresh keeps it. */
+  private sorts = new Map<string, { col: number; dir: 1 | -1 }>();
+
+  /**
+   * `o.sort` makes the columns whose cells carry sort keys sortable by clicking their header, starting at `col`.
+   * Numbers sort high to low first, text A to Z; empty keys stay last either way. `o.foot` is a row kept at the bottom.
+   */
+  private tableCard(head: string[], rows: Row[], title?: string, desc?: string, open = false, o: { sort?: { key: string; col: number }; foot?: Row; headTips?: Record<number, string> } = {}) {
     const el = this.grid().createEl("section", { cls: "pp-card is-wide" });
     let host: HTMLElement = el;
     if (title) {
       const h = el.createEl("h2", { text: title });
       if (desc) this.tip.bind(h, desc);
     }
+    const keyOf = (r: Row, i: number) => { const c = r[i]; return typeof c === "string" ? undefined : c?.sort; };
+    const sortable = head.map((_, i) => !!o.sort && rows.some((r) => keyOf(r, i) != null));
+    const fill = (row: HTMLElement, r: Row) => r.forEach((c, i) => {
+      const td = row.createEl("td");
+      const cell: Cell = typeof c === "string" ? { text: c } : c;
+      if (cell.render) cell.render(td);
+      else if (i === 0 && cell.text.startsWith("§")) { const [, color, name] = cell.text.split("§"); swatch(td, color); td.appendText(name); }
+      else rich(td, cell.text);
+      if (cell.tip) this.tip.bind(td, cell.tip, false);
+    });
     const build = () => {
       const scroll = host.createDiv({ cls: "pp-table-scroll" });
       const table = scroll.createEl("table");
       const tr = table.createEl("thead").createEl("tr");
-      head.forEach((h) => tr.createEl("th", { text: h }));
       const tb = table.createEl("tbody");
-      for (const r of rows) {
-        const row = tb.createEl("tr");
-        r.forEach((c, i) => {
-          const td = row.createEl("td");
-          if (i === 0 && c.startsWith("§")) { const [, color, name] = c.split("§"); swatch(td, color); td.appendText(name); }
-          else rich(td, c);
+      const tf = o.foot ? table.createEl("tfoot") : null;
+      const state = o.sort ? (this.sorts.get(o.sort.key) ?? { col: o.sort.col, dir: -1 }) : null;
+      const ths = head.map((h, i) => {
+        const th = tr.createEl("th");
+        if (o.headTips?.[i]) this.tip.bind(th, o.headTips[i], !sortable[i]);
+        if (!sortable[i]) { th.setText(h); return th; }
+        const b = th.createEl("button", { cls: "pp-sort", text: h, attr: { type: "button", "aria-label": t().sortBy(h) } });
+        b.addEventListener("click", () => {
+          if (!state || !o.sort) return;
+          const text = rows.some((r) => typeof keyOf(r, i) === "string");
+          state.dir = state.col === i ? (-state.dir as 1 | -1) : text ? 1 : -1;
+          state.col = i;
+          this.sorts.set(o.sort.key, state);
+          draw();
         });
-      }
+        return th;
+      });
+      const draw = () => {
+        tb.empty();
+        let list = rows;
+        if (state) {
+          list = [...rows].sort((a, b) => {
+            const x = keyOf(a, state.col), y = keyOf(b, state.col);
+            if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
+            const cmp = typeof x === "string" || typeof y === "string" ? String(x).localeCompare(String(y), loc()) : x - y;
+            return cmp * state.dir;
+          });
+          ths.forEach((th, i) => {
+            if (!sortable[i]) return;
+            th.setAttr("aria-sort", i === state.col ? (state.dir > 0 ? "ascending" : "descending") : "none");
+            th.toggleClass("is-sorted", i === state.col);
+          });
+        }
+        for (const r of list) fill(tb.createEl("tr"), r);
+      };
+      draw();
+      if (tf && o.foot) fill(tf.createEl("tr"), o.foot);
     };
     if (open) build();
     else {
@@ -440,6 +500,45 @@ export class DashboardView extends ItemView {
       det.addEventListener("toggle", () => { if (det.open && !det.querySelector("table")) build(); });
     }
     this.revealer.add(el);
+  }
+
+  // ---------- momentum ----------
+  /** The 14 calendar days momentum compares, ending at the last reading, and each window's daily average. */
+  private moBars(full: { date: string; daily: number | null }[], A: Analysis): { bars: (number | null)[]; avg?: [number, number] } {
+    const byDate = new Map(full.map((x) => [x.date, x.daily]));
+    const bars = Array.from({ length: 14 }, (_, i) => byDate.get(addDays(A.lastDate, i - 13)) ?? null);
+    return { bars, avg: A.mo?.before != null ? [A.mo.before / 7, A.mo.recent / 7] : undefined };
+  }
+
+  /** The "Last 7 days" tile: the sum, its momentum, and the two weeks behind it. */
+  private moTile(A: Analysis, full: { date: string; daily: number | null }[], color?: string): Tile {
+    return { label: t().tLast7, value: A.sum7, prefix: "+", color, sub: A.mo?.before != null ? `${moText(A.mo)} ${t().vsPrev}` : "", tip: moTip(A.mo, A), ...this.moBars(full, A) };
+  }
+
+  /** A table cell with the momentum as a bar from the middle (up right, down left) and as text. */
+  private moCell(a: Analysis | null | undefined, name: string, scale: number): Cell {
+    const mo = a?.mo;
+    if (!mo || mo.before == null) return { text: "–", sort: null, tip: moTip(mo, { name }) };
+    const r = mo.ratio ?? (mo.recent > mo.before ? Infinity : 0);
+    return {
+      // Counts too small for a fair percentage sort after every fair one, among themselves by their shrunk change.
+      text: moText(mo), sort: mo.small ? -10 + Math.max(-1, Math.min(1, mo.score)) : mo.score, tip: moTip(mo, { ...a, name }),
+      render: (td) => {
+        const bar = td.createSpan({ cls: "pp-mbar" + (mo.small ? " is-small" : "") });
+        const w = Math.min(1, Math.abs(r) / scale) * 50;
+        if (w > 0.5) {
+          const f = bar.createSpan({ cls: "pp-mbar-fill " + (r > 0 ? "is-up" : "is-down") });
+          f.setCssStyles({ width: w + "%", left: r > 0 ? "50%" : 50 - w + "%" });
+        }
+        rich(td.createSpan({ cls: "pp-mtext" }), moText(mo));
+      },
+    };
+  }
+
+  /** The scale the momentum bars of a table share: the biggest fair change, at least ±25% and at most ±100%. */
+  private moScale(list: (Analysis | null | undefined)[]): number {
+    const rs = list.map((a) => a?.mo).filter((m): m is Momentum => !!m && !m.small && m.ratio != null).map((m) => Math.abs(m.ratio as number));
+    return Math.min(1, Math.max(0.25, ...rs));
   }
 
   private markers(ids: string[]): Marker[] {
@@ -619,7 +718,7 @@ export class DashboardView extends ItemView {
     this.insights(this.pluginInsights(id, A));
 
     this.tiles([
-      { label: t().tLast7, value: A.sum7, prefix: "+", sub: delta(A.momentum), spark: A.d.slice(-14).map((x) => x.daily), color },
+      this.moTile(A, full, color),
       { label: t().tLast30, value: this.m.gainOver(full, 30) ?? 0, prefix: "+", bars: full.slice(-30).map((x) => x.daily), color },
       st && { label: t().tRank, value: st.rank, pre: t().rankPre, unit: t().rankPost, sub: t().topPct(fmt1(st.topPct)), spark: full.filter((x) => x.rank).slice(-30).map((x) => -(x.rank as number)), color },
       A.best && { label: t().tBest, value: A.best.daily, prefix: "+", sub: longDate(A.best.date) },
@@ -696,7 +795,7 @@ export class DashboardView extends ItemView {
   private renderTotal() {
     const P = this.P, mine = this.plugin.settings.mine, store = this.plugin.store;
     const full = this.m.totalSeries(mine);
-    const A = this.m.analyze(full.map((x) => ({ date: x.date, total: x.total, daily: x.daily, rank: null, gap: x.gap })));
+    const A = this.m.analyzeTotal(full);
     if (!A) { this.renderPending(mine[0]); return; }
     const s = this.clip(full);
     const versionCount = mine.reduce((n, id) => n + Object.keys(store.versions[id] ?? {}).length, 0);
@@ -705,7 +804,7 @@ export class DashboardView extends ItemView {
     this.syncOrrery(mine, null);
     this.insights(this.totalInsights(A));
     this.tiles([
-      { label: t().tLast7, value: A.sum7, prefix: "+", sub: delta(A.momentum), spark: A.d.slice(-14).map((x) => x.daily) },
+      this.moTile(A, full),
       { label: t().tLast30, value: this.m.gainOver(A.full, 30) ?? 0, prefix: "+", bars: full.slice(-30).map((x) => x.daily) },
       A.best && { label: t().tBest, value: A.best.daily, prefix: "+", sub: longDate(A.best.date) },
       { label: t().tPlugins, value: t().pluginsAndReleases(mine.length, versionCount), sub: t().tPluginsSub },
@@ -797,7 +896,7 @@ export class DashboardView extends ItemView {
   private renderCompare() {
     const mine = this.plugin.settings.mine, store = this.plugin.store;
     const total = this.m.totalSeries(mine);
-    const A = this.m.analyze(total.map((x) => ({ date: x.date, total: x.total, daily: x.daily, rank: null, gap: x.gap })));
+    const A = this.m.analyzeTotal(total);
     this.renderHero({ name: t().allPlugins, A });
     this.syncOrrery(mine, null);
     if (A) this.insights(this.totalInsights(A).filter((x) => [t().kLead, t().kRank, t().kStart].includes(x.k)));
@@ -807,26 +906,34 @@ export class DashboardView extends ItemView {
     this.rankCard(mine, true);
     this.standingCard(mine);
 
-    const rows = mine.map((id) => {
-      const full = this.m.series(id), latest = this.m.latest(id), a = this.m.analyze(full), st = this.m.standing(id);
+    const an = new Map(mine.map((id) => [id, this.m.analyze(this.m.series(id))]));
+    const scale = this.moScale([...an.values()]);
+    const perDay = (a: Analysis | null | undefined) => a ? mean(a.d.slice(-14).filter((x) => !x.gap).map((x) => x.daily)) : null;
+    const rows: Row[] = mine.map((id) => {
+      const full = this.m.series(id), latest = this.m.latest(id), a = an.get(id), st = this.m.standing(id);
       const vs = Object.keys(store.versions[id] ?? {}).sort(semverCmp);
-      return [`§${this.colorOf(id)}§${this.nameOf(id)}`, fmt(latest?.downloads), signed(this.m.gainOver(full, 7)), delta(a?.momentum) || "–", signed(this.m.gainOver(full, 30)),
-        a ? fmt1(mean(a.d.slice(-14).filter((x) => !x.gap).map((x) => x.daily))) : "–", st ? t().rankTick(fmt(st.rank)) : "–",
-        vs.length ? "v" + vs[vs.length - 1] : "–", fmt(vs.length), fmt(store.repos[id]?.stars), full[0]?.date ?? "–"];
+      return [{ text: `§${this.colorOf(id)}§${this.nameOf(id)}`, sort: this.nameOf(id) }, { text: fmt(latest?.downloads), sort: latest?.downloads }, { text: signed(a?.sum7), sort: a?.sum7 },
+        this.moCell(a, this.nameOf(id), scale), { text: signed(this.m.gainOver(full, 30)), sort: this.m.gainOver(full, 30) },
+        { text: fmt1(perDay(a)), sort: perDay(a) }, { text: st ? t().rankTick(fmt(st.rank)) : "–", sort: st ? -st.rank : null },
+        vs.length ? "v" + vs[vs.length - 1] : "–", { text: fmt(vs.length), sort: vs.length }, { text: fmt(store.repos[id]?.stars), sort: store.repos[id]?.stars }, { text: full[0]?.date ?? "–", sort: full[0]?.date }];
     });
-    if (A && total.length) rows.push([`**${t().hSum}**`, `**${fmt(A.total)}**`, signed(this.m.gainOver(A.full, 7)), delta(A.momentum) || "–", signed(this.m.gainOver(A.full, 30)),
-      fmt1(mean(A.d.slice(-14).filter((x) => !x.gap).map((x) => x.daily))), "–", "–", fmt(mine.reduce((n, id) => n + Object.keys(store.versions[id] ?? {}).length, 0)), fmt(mine.reduce((n, id) => n + (store.repos[id]?.stars ?? 0), 0)), total[0].date]);
-    this.tableCard([t().hPlugin, t().hTotal, t().h7, t().hMomentum, t().h30, t().hPerDay, t().hRank, t().hLatest, t().hVersions, t().hStars, t().hFirst], rows, t().cSummary, t().dSummary, true);
+    const foot: Row | undefined = A && total.length ? [`**${t().hSum}**`, `**${fmt(A.total)}**`, signed(A.sum7), { ...this.moCell(A, t().allPlugins, scale), sort: undefined }, signed(this.m.gainOver(A.full, 30)),
+      fmt1(perDay(A)), "–", "–", fmt(mine.reduce((n, id) => n + Object.keys(store.versions[id] ?? {}).length, 0)), fmt(mine.reduce((n, id) => n + (store.repos[id]?.stars ?? 0), 0)), total[0].date] : undefined;
+    this.tableCard([t().hPlugin, t().hTotal, t().h7, t().hMomentum, t().h30, t().hPerDay, t().hRank, t().hLatest, t().hVersions, t().hStars, t().hFirst], rows, t().cSummary, t().dSummary, true,
+      { sort: { key: "compare", col: 3 }, foot, headTips: { 3: t().thMomentum } });
   }
 
+  /** One tile per plugin. The bars are the 14 days momentum compares, whatever range is picked. */
   private groupTiles(ids: string[]): Tile[] {
-    const days = this.datesFor(ids).slice(-14);
+    const end = ids.map((id) => this.m.latest(id)?.date).filter((d): d is string => !!d).sort().pop();
+    const days = end ? Array.from({ length: 14 }, (_, i) => addDays(end, i - 13)) : [];
     const dailyOf = (full: Pt[]) => this.pick(full, days, "daily");
     const barMax = sharedMax(ids.map((id) => dailyOf(this.m.series(id))));
     return ids.filter((id) => this.m.series(id).length).map((id) => {
       const full = this.m.series(id), a = this.m.analyze(full);
       return { label: this.nameOf(id), color: this.colorOf(id), value: this.m.latest(id)?.downloads ?? 0,
-        sub: `${t().h7} ${signed(a?.sum7)} ${delta(a?.momentum)} · ${t().h30} ${signed(this.m.gainOver(full, 30))}`, bars: dailyOf(full), barMax: barMax ?? undefined };
+        sub: `${t().h7} ${signed(a?.sum7)} ${moText(a?.mo)} · ${t().h30} ${signed(this.m.gainOver(full, 30))}`, bars: dailyOf(full), barMax: barMax ?? undefined,
+        avg: a?.mo?.before != null ? [a.mo.before / 7, a.mo.recent / 7] as [number, number] : undefined, tip: moTip(a?.mo, { ...a, name: this.nameOf(id) }) };
     });
   }
 
@@ -848,6 +955,7 @@ export class DashboardView extends ItemView {
     }
     this.insights(this.rivalInsights(me, group), 6, []);
     this.tiles(this.groupTiles(group), 9);
+    this.momentumMap(me, group);
     this.sideBySide(group, { smooth: true });
 
     // Share of the group's new downloads, over a rolling 7 days.
@@ -877,21 +985,117 @@ export class DashboardView extends ItemView {
     this.standingCard(group);
 
     const today = todayUtc();
-    const rows = group.map((id) => {
-      const full = this.m.series(id), latest = this.m.latest(id), a = this.m.analyze(full), st = this.m.standing(id);
+    const an = new Map(group.map((id) => [id, this.m.analyze(this.m.series(id))]));
+    const scale = this.moScale([...an.values()]);
+    const rows: Row[] = group.map((id) => {
+      const full = this.m.series(id), latest = this.m.latest(id), a = an.get(id), st = this.m.standing(id);
       const race = id === me ? null : this.m.race(me, id);
       const rel = [...(store.releases[id] ?? [])].sort((x, y) => y.date.localeCompare(x.date));
       const cad = this.m.cadence(id);
-      const upd = store.updated[id];
+      const upd = store.updated[id], ago = upd ? Math.max(0, dayDiff(new Date(upd).toISOString().slice(0, 10), today)) : null;
       const name = this.nameOf(id) + (id === me ? ` (${t().you})` : "");
-      return [`§${this.colorOf(id)}§${name}`, fmt(latest?.downloads), signed(a?.sum7), delta(a?.momentum) || "–", signed(this.m.gainOver(full, 30)),
-        a ? fmt1(mean(a.d.slice(-14).filter((x) => !x.gap).map((x) => x.daily))) : "–", st ? t().rankTick(fmt(st.rank)) : "–",
-        race ? signed(race.gap) : "–", race?.days == null ? "–" : race.gap > 0 ? "~" + t().daysN(fmt(race.days)) : `{down|${t().caughtIn(fmt(race.days))}}`,
-        rel[0] ? "v" + rel[0].version : "–", upd ? t().ago(Math.max(0, dayDiff(new Date(upd).toISOString().slice(0, 10), today))) : "–",
-        cad != null ? t().daysN(fmt1(cad)) : "–", fmt(store.repos[id]?.stars), full[0]?.date ?? "–"];
+      const perDay = a ? mean(a.d.slice(-14).filter((x) => !x.gap).map((x) => x.daily)) : null;
+      return [{ text: `§${this.colorOf(id)}§${name}`, sort: this.nameOf(id) }, { text: fmt(latest?.downloads), sort: latest?.downloads }, { text: signed(a?.sum7), sort: a?.sum7 },
+        this.moCell(a, this.nameOf(id), scale), { text: signed(this.m.gainOver(full, 30)), sort: this.m.gainOver(full, 30) },
+        { text: fmt1(perDay), sort: perDay }, { text: st ? t().rankTick(fmt(st.rank)) : "–", sort: st ? -st.rank : null },
+        { text: !race || !race.gap ? "–" : race.gap > 0 ? t().gapAhead(fmt(race.gap)) : t().gapBehind(fmt(-race.gap)), sort: race?.gap },
+        { text: race?.days == null ? "–" : race.days > 365 ? t().overYear : race.gap > 0 ? "~" + t().daysN(fmt(race.days)) : `{down|${t().caughtIn(fmt(race.days))}}`, sort: race?.days == null ? null : -race.days },
+        rel[0] ? "v" + rel[0].version : "–", { text: ago == null ? "–" : t().ago(ago), sort: ago == null ? null : -ago },
+        { text: cad != null ? t().daysN(fmt1(cad)) : "–", sort: cad == null ? null : -cad }, { text: fmt(store.repos[id]?.stars), sort: store.repos[id]?.stars }, { text: full[0]?.date ?? "–", sort: full[0]?.date }];
     });
     this.tableCard([t().hPlugin, t().hTotal, t().h7, t().hMomentum, t().h30, t().hPerDay, t().hRank, t().hGap, t().hEta, t().hLatest, t().hUpdated, t().hCadence, t().hStars, t().hFirst],
-      rows, t().cSummary, t().dSummary, true);
+      rows, t().cSummary, t().dSummary, true, { sort: { key: "rivals", col: 3 }, headTips: { 3: t().thMomentum } });
+  }
+
+  /** The competitors' combined momentum: everyone but `me` with two full weeks, summed. */
+  private groupMomentum(me: string, an: Map<string, Analysis | null>): { recent: number; before: number; ratio: number | null; small: boolean } | null {
+    const mos = [...an].filter(([id]) => id !== me).map(([, a]) => a?.mo).filter((m): m is Momentum => m?.before != null);
+    if (!mos.length) return null;
+    const recent = mos.reduce((n, m) => n + m.recent, 0), before = mos.reduce((n, m) => n + (m.before as number), 0);
+    return { recent, before, ratio: before ? (recent - before) / before : null, small: before < SMALL_BASE };
+  }
+
+  /**
+   * Every plugin of the group by size (x, log) and momentum (y): four corners from "leading, speeding up" to
+   * "slowing", the competitors' combined momentum as a dashed line. Unfair percentages are hollow dots.
+   */
+  private momentumMap(me: string, group: string[]) {
+    const an = new Map(group.map((id) => [id, this.m.analyze(this.m.series(id))]));
+    const pts = group.map((id) => ({ id, a: an.get(id) as Analysis })).filter((p) => p.a?.mo?.before != null && p.a.total > 0);
+    const missing = group.filter((id) => !pts.some((p) => p.id === id));
+    if (pts.length < 2) return;
+    const ratio = (mo: Momentum) => mo.ratio ?? (mo.recent > (mo.before ?? 0) ? Infinity : 0);
+    const fair = pts.filter((p) => !p.a.mo?.small).map((p) => Math.abs(ratio(p.a.mo as Momentum))).filter(isFinite);
+    const grp = this.groupMomentum(me, an);
+    const top = Math.max(0, ...fair, grp?.ratio != null ? Math.abs(grp.ratio) : 0);
+    const Y = [0.25, 0.5, 1, 2].find((v) => v >= top) ?? 2;
+    const logs = pts.map((p) => Math.log10(p.a.total));
+    let lo = Math.min(...logs), hi = Math.max(...logs);
+    if (hi - lo < 0.5) { const c = (hi + lo) / 2; lo = c - 0.25; hi = c + 0.25; }
+    // Dots stay inside 8–92% across and 10–90% down, clear of the corner names.
+    const xOf = (total: number) => 8 + (Math.log10(total) - lo) / (hi - lo) * 84;
+    const yOf = (r: number) => 50 - Math.max(-1, Math.min(1, r / Y)) * 40;
+    const mid = xOf(Math.pow(10, mean(logs)));
+    const pctTick = (v: number) => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.round(Math.abs(v) * 100) + "%";
+
+    const showGroup = grp?.ratio != null && !grp.small;
+    const legend = showGroup ? [{ name: t().qGroup(delta(grp?.ratio)), cls: "dash" }] : null;
+    this.domCard({ title: t().cMomentumMap, desc: t().dMomentumMap, wide: true, legend }, (el) => {
+      const box = el.createDiv({ cls: "pp-quad" });
+      const plot = box.createDiv({ cls: "pp-quad-plot" });
+      for (const v of [Y, Y / 2, 0, -Y / 2, -Y]) {
+        const tick = plot.createDiv({ cls: "pp-quad-tick" + (v === 0 ? " is-zero" : "") });
+        tick.setCssStyles({ top: yOf(v) + "%" });
+        tick.createSpan({ text: pctTick(v) });
+      }
+      plot.createDiv({ cls: "pp-quad-mid" }).setCssStyles({ left: mid + "%" });
+      ([["tl", t().qTL], ["tr", t().qTR], ["bl", t().qBL], ["br", t().qBR]] as const).forEach(([k, label]) => plot.createDiv({ cls: "pp-quad-q is-" + k, text: label }));
+      if (showGroup && grp?.ratio != null) plot.createDiv({ cls: "pp-quad-group" }).setCssStyles({ top: yOf(grp.ratio) + "%" });
+      const dots = pts.map((p, i) => {
+        const mo = p.a.mo as Momentum;
+        const d = plot.createDiv({ cls: "pp-quad-dot" + (p.id === me ? " is-me" : "") + (mo.small ? " is-small" : "") });
+        d.setCssProps({ "--pp-c": this.colorOf(p.id), "--pp-d": String(i) });
+        this.tip.bind(d, moTip(mo, { ...p.a, name: this.nameOf(p.id) }) + `\n${t().hTotal} ${fmt(p.a.total)}`);
+        const label = plot.createDiv({ cls: "pp-quad-label" + (p.id === me ? " is-me" : "") });
+        label.setCssProps({ "--pp-d": String(i) });
+        label.appendText(this.nameOf(p.id) + " ");
+        rich(label, moText(mo));
+        return { id: p.id, d, label, x: xOf(p.a.total), y: yOf(ratio(mo)), me: p.id === me };
+      });
+      const axis = box.createDiv({ cls: "pp-quad-axis" });
+      axis.createSpan({ text: fmt(Math.pow(10, lo)) });
+      axis.createSpan({ text: t().qX + " →" });
+      axis.createSpan({ text: fmt(Math.pow(10, hi)) });
+      if (missing.length) el.createDiv({ cls: "pp-muted pp-quad-note", text: t().qNoData(missing.map((id) => this.nameOf(id)).join(", ")) });
+      return () => {
+        // Each label goes right of its dot, or left, above or below: the first spot that overlaps nothing placed yet.
+        const W = plot.clientWidth, H = plot.clientHeight, crowded: typeof dots = [];
+        // Every dot is an obstacle from the start, so no label covers another plugin's dot. Each label takes the
+        // free spot nearest its dot (right, left, above, below, then the corners), or the one overlapping least.
+        const placed: DOMRect[] = dots.map((p) => { const r = p.d.offsetWidth / 2 + 2; return new DOMRect(p.x / 100 * W - r, p.y / 100 * H - r, 2 * r, 2 * r); });
+        // The corner names too.
+        plot.querySelectorAll<HTMLElement>(".pp-quad-q").forEach((q) => placed.push(new DOMRect(q.offsetLeft, q.offsetTop, q.offsetWidth, q.offsetHeight)));
+        const cost = (r: DOMRect) => (r.left < 0 || r.right > W || r.top < 0 || r.bottom > H ? 1e9 : 0) +
+          placed.reduce((n, q) => n + Math.max(0, Math.min(r.right, q.right) - Math.max(r.left, q.left)) * Math.max(0, Math.min(r.bottom, q.bottom) - Math.max(r.top, q.top)), 0);
+        for (const p of [...dots].sort((a, b) => Number(b.me) - Number(a.me))) {
+          p.d.setCssStyles({ left: p.x + "%", top: p.y + "%" });
+          const px = p.x / 100 * W, py = p.y / 100 * H, lw = p.label.offsetWidth, lh = p.label.offsetHeight, gap = p.d.offsetWidth / 2 + 6;
+          const spots = [[px + gap, py - lh / 2], [px - gap - lw, py - lh / 2], [px - lw / 2, py - gap - lh], [px - lw / 2, py + gap],
+            [px + gap * 0.7, py - gap * 0.7 - lh], [px + gap * 0.7, py + gap * 0.7], [px - gap * 0.7 - lw, py - gap * 0.7 - lh], [px - gap * 0.7 - lw, py + gap * 0.7]];
+          let at = new DOMRect(spots[0][0], spots[0][1], lw, lh), best = Infinity;
+          for (const [x, y] of spots) { const r = new DOMRect(x, y, lw, lh), c = cost(r); if (c < best) { best = c; at = r; } if (!c) break; }
+          // No room (a narrow pane, a crowd): the dot keeps its tooltip and the name goes to a legend below. Yours always shows.
+          if (best > 0 && !p.me) { p.label.hide(); crowded.push(p); continue; }
+          placed.push(at);
+          p.label.setCssStyles({ left: at.left + "px", top: at.top + "px" });
+          p.label.addClass("is-on");
+        }
+        if (crowded.length) {
+          const lg = el.createDiv({ cls: "pp-legend pp-quad-legend" });
+          for (const p of crowded) { const sp = lg.createSpan(); swatch(sp, this.colorOf(p.id)); rich(sp, this.nameOf(p.id) + " " + moText(an.get(p.id)?.mo)); }
+        }
+      };
+    });
   }
 
   private releasesCard(ids: string[], labels: string[]) {
@@ -932,7 +1136,13 @@ export class DashboardView extends ItemView {
       push(t().kLatest, head, t().latestBody(longDate(A.last.date), signed(A.avgPrev), A.d.length, A.lastRank ?? 0) +
         (A.lastRank !== 1 && A.best ? t().latestBest(longDate(A.best.date), signed(A.best.daily)) : ""));
     }
-    if (A.momentum != null) push(t().kMomentum, t().momentumHead(signed(A.sum7), delta(A.momentum)), t().momentumBody(signed(A.sum7), signed(A.sumBefore7), fmt1(A.pace)));
+    if (A.mo?.before != null) push(t().kMomentum, t().momentumHead(signed(A.sum7), moText(A.mo)), moTip(A.mo, A));
+    // Several weeks the same way, or the last 28 days against the 28 before, so one odd week doesn't read as a trend.
+    if (A.weeks.length >= 3 && (Math.abs(A.run) >= 2 || A.mo28?.before != null)) {
+      const d28 = A.mo28?.before != null ? moText(A.mo28) : "";
+      const head = A.run >= 2 ? t().runUpHead(A.run) : A.run <= -2 ? t().runDownHead(-A.run) : t().trend28Head(d28);
+      push(t().kTrend, head + (Math.abs(A.run) >= 2 && d28 ? ` · ${t().trend28Head(d28)}` : ""), t().trendBody(A.weeks.map((w) => fmt(w)).join(" → "), d28));
+    }
     if (A.next && A.etaDate && A.etaDays != null) push(t().kNext, t().nextHead(fmt(A.next), fmt(A.next - A.total)), t().nextBody(fmt1(A.pace), longDate(A.etaDate), A.etaDays));
     if (A.doubleDays != null && A.doubleDays > 0) push(t().kGrowth, t().doubled(A.doubleDays), t().doubledBody(longDate(addDays(A.lastDate, -A.doubleDays)), fmt(A.total / 2)) + (A.streak >= 5 ? t().streak(A.streak) : ""));
     return out;
@@ -998,11 +1208,19 @@ export class DashboardView extends ItemView {
     const sum7 = group.reduce((n, id) => n + (an.get(id)?.sum7 ?? 0), 0);
     if (sum7 > 0) out.push({ k: t().kShare, t: t().shareHead(pct1(mine.sum7 / sum7)), b: group.map((id) => `${this.nameOf(id)} ${signed(an.get(id)?.sum7)}`).join(" · ") });
 
+    // My momentum against the competitors' combined: is the whole niche moving, or only me?
+    const grp = this.groupMomentum(me, an);
+    if (grp?.ratio != null && mine.mo?.ratio != null && !grp.small && !mine.mo.small) {
+      const pts = Math.round((mine.mo.ratio - grp.ratio) * 100);
+      const lead = pts > 0 ? t().vsGroupAhead(fmt(pts)) : pts < 0 ? t().vsGroupBehind(fmt(-pts)) : t().vsGroupEven;
+      out.push({ k: t().kVsGroup, t: t().vsGroupHead(moText(mine.mo), delta(grp.ratio)), b: t().vsGroupBody(lead, fmt(grp.recent), fmt(grp.before)) });
+    }
+
     const others = group.filter((id) => id !== me);
     const above = others.filter((id) => (an.get(id)?.total ?? 0) > mine.total).sort((a, b) => (an.get(a)?.total ?? 0) - (an.get(b)?.total ?? 0));
     if (above.length) {
       const id = above[0], r = this.m.race(me, id);
-      if (r) out.push({ k: t().kOvertake, t: r.days != null ? t().overtakeHead(this.nameOf(id), r.days) : t().overtakeAway(this.nameOf(id)), b: t().overtakeBody(fmt(r.gap), fmt1(r.myPace), fmt1(r.theirPace)) });
+      if (r) out.push({ k: t().kOvertake, t: r.days != null ? t().overtakeHead(this.nameOf(id), r.days) : t().overtakeAway(this.nameOf(id)), b: t().overtakeBody(fmt(r.gap), fmt1(r.myPace), fmt1(r.theirPace), this.nameOf(id)) });
     } else {
       const second = [...others].sort((a, b) => (an.get(b)?.total ?? 0) - (an.get(a)?.total ?? 0))[0];
       if (second) out.push({ k: t().kOvertake, t: t().topOfGroup, b: t().topBody(this.nameOf(second), fmt(mine.total - (an.get(second)?.total ?? 0))) });
@@ -1012,9 +1230,9 @@ export class DashboardView extends ItemView {
       .map((id) => ({ id, r: this.m.race(me, id) })).filter((x) => x.r?.days != null).sort((a, b) => (a.r?.days ?? 0) - (b.r?.days ?? 0));
     if (chasers.length) {
       const c = chasers[0], r = c.r as NonNullable<typeof c.r>;
-      out.push({ k: t().kChaser, t: t().chaserHead(this.nameOf(c.id), r.days as number), b: t().chaserBody(fmt(-r.gap), fmt1(r.myPace), fmt1(r.theirPace)) });
+      out.push({ k: t().kChaser, t: t().chaserHead(this.nameOf(c.id), r.days as number), b: t().chaserBody(fmt(-r.gap), fmt1(r.myPace), fmt1(r.theirPace), this.nameOf(c.id)) });
     } else if (others.some((id) => (an.get(id)?.total ?? 0) <= mine.total)) {
-      out.push({ k: t().kChaser, t: t().chaserSafe, b: others.map((id) => `${this.nameOf(id)} ${fmt(an.get(id)?.total)}`).join(" · ") });
+      out.push({ k: t().kChaser, t: t().chaserSafe, b: others.filter((id) => (an.get(id)?.total ?? 0) <= mine.total).map((id) => `${this.nameOf(id)} ${fmt(an.get(id)?.total)}`).join(" · ") });
     }
 
     const growth = group.map((id) => { const a = an.get(id); return { id, g: a && a.total - a.sum7 > 0 ? a.sum7 / (a.total - a.sum7) : 0 }; }).sort((a, b) => b.g - a.g);
@@ -1031,7 +1249,7 @@ export class DashboardView extends ItemView {
     const cads = others.map((id) => this.m.cadence(id)).filter((x): x is number => x != null).sort((a, b) => a - b);
     const myCad = this.m.cadence(me);
     if (cads.length || myCad != null) {
-      const median = cads.length ? t().daysN(fmt1(cads[Math.floor(cads.length / 2)])) : "–";
+      const median = cads.length ? t().everyN(fmt1(cads[Math.floor(cads.length / 2)])) : "–";
       out.push({ k: t().kCadence, t: myCad != null ? t().cadenceHead(fmt1(myCad), median) : t().cadenceNone, b: t().cadenceBody });
     }
     return out;
