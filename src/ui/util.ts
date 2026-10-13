@@ -235,7 +235,8 @@ export function sparkBars(parent: HTMLElement, values: (number | null)[], color:
   if (!values.length) return;
   const w = 100 / values.length, half = Math.floor(values.length / 2);
   if (avg) max = Math.max(max, ...avg);
-  const svg = parent.createSvg("svg", { cls: "pp-spark" + (avg ? " is-split" : ""), attr: { viewBox: "0 0 100 30", preserveAspectRatio: "none", "aria-hidden": "true" } });
+  // Obsidian's createSvg adds `cls` with classList.add, which throws on a space: several classes go as an array.
+  const svg = parent.createSvg("svg", { cls: avg ? ["pp-spark", "is-split"] : "pp-spark", attr: { viewBox: "0 0 100 30", preserveAspectRatio: "none", "aria-hidden": "true" } });
   const y = (v: number) => (30 - Math.max(0.8, v / max * 29)).toFixed(2);
   values.forEach((v, i) => {
     if (v == null) return;
@@ -243,10 +244,10 @@ export function sparkBars(parent: HTMLElement, values: (number | null)[], color:
     svg.createSvg("rect", { ...(avg && i < half ? { cls: "is-before" } : {}), attr: { x: (i * w + w * 0.15).toFixed(2), width: (w * 0.7).toFixed(2), y: (30 - h).toFixed(2), height: h.toFixed(2), fill: color } });
   });
   if (!avg) return;
-  const line = (x1: number, x2: number, v: number, cls: string) => svg.createSvg("line", { cls, attr: { x1, x2, y1: y(v), y2: y(v), stroke: color, "vector-effect": "non-scaling-stroke" } });
+  const line = (x1: number, x2: number, v: number, cls: string[]) => svg.createSvg("line", { cls, attr: { x1, x2, y1: y(v), y2: y(v), stroke: color, "vector-effect": "non-scaling-stroke" } });
   svg.createSvg("line", { cls: "pp-spark-split", attr: { x1: half * w, x2: half * w, y1: 0, y2: 30, "vector-effect": "non-scaling-stroke" } });
-  line(0, half * w, avg[0], "pp-spark-avg is-before");
-  line(half * w, 100, avg[1], "pp-spark-avg");
+  line(0, half * w, avg[0], ["pp-spark-avg", "is-before"]);
+  line(half * w, 100, avg[1], ["pp-spark-avg"]);
 }
 
 export function swatch(parent: HTMLElement, color: string): HTMLElement {
