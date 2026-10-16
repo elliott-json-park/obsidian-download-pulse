@@ -5,7 +5,7 @@ import { addDays } from "../data/store";
 import { t } from "../i18n";
 import type { ShareOpts } from "../types";
 import { SERIES_DARK, SERIES_LIGHT } from "./charts";
-import { alpha, fmt, fmt1, signed } from "./util";
+import { alpha, fmt, fmt1, signed, withCjk } from "./util";
 
 /*
  * A card of your plugins to post elsewhere: one big total, a line per plugin, and the app's name at the foot.
@@ -151,8 +151,8 @@ function fitSize(ctx: Ctx, s: string, max: number, size: number, weight: number,
   return z;
 }
 
-/** Letter spacing for small labels: spaced capitals in Latin; Hangul reads better without. */
-const tracking = (s: string) => /[ㄱ-힝]/.test(s) ? 0 : 0.06;
+/** Letter spacing for small labels: spaced capitals in Latin; Hangul and Chinese read better without. */
+const tracking = (s: string) => /[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]/.test(s) ? 0 : 0.06;
 
 /** A small label in spaced capitals. */
 function label(ctx: Ctx, s: string, x: number, y: number, size: number, color: string, family: string, align: CanvasTextAlign = "left") {
@@ -422,7 +422,7 @@ export class ShareModal extends Modal {
 
   private family(): string {
     const f = getComputedStyle(activeDocument.body).getPropertyValue("--font-interface").trim() || getComputedStyle(activeDocument.body).fontFamily;
-    return f || "system-ui, sans-serif";
+    return withCjk(f || "system-ui, sans-serif");
   }
 
   private draw() {

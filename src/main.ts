@@ -1,5 +1,5 @@
 import { Notice, Plugin, type WorkspaceLeaf } from "obsidian";
-import { DEFAULT_SETTINGS, emptyStore, type PluginData, type PluginMeta, type Settings, type Store, type UiState } from "./types";
+import { DEFAULT_SETTINGS, LANGUAGES, emptyStore, type PluginData, type PluginMeta, type Settings, type Store, type UiState } from "./types";
 import { Engine } from "./data/engine";
 import { addDays, prune, todayUtc } from "./data/store";
 import { setLanguage, t } from "./i18n";
@@ -29,6 +29,8 @@ export default class PulsePlugin extends Plugin {
     // Before 1.2 the schedule was a fixed interval, 30 minutes by default. The file changes once a day,
     // so the short intervals become the schedule that looks right after it is published.
     if (this.settings.refreshMinutes > 0 && this.settings.refreshMinutes < 60) this.settings.refreshMinutes = -1;
+    // A language this version doesn't know (a newer or hand-edited data.json) follows Obsidian instead.
+    if (!(LANGUAGES as readonly string[]).includes(this.settings.language)) this.settings.language = "auto";
     this.store = { ...emptyStore(), ...data?.store };
     setLanguage(this.settings.language);
 

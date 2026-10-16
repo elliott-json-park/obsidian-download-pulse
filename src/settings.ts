@@ -105,7 +105,7 @@ export class PulseSettingTab extends PluginSettingTab {
       })) },
       { name: t().sNotices, desc: t().sNoticesDesc, render: (row) => row.addToggle((tg) => tg.setValue(s.milestoneNotices).onChange(async (v) => { s.milestoneNotices = v; await plugin.saveSettings(); })) },
       { name: t().sLanguage, render: (row) => row.addDropdown((d) => d
-        .addOption("auto", t().langAuto).addOption("en", "English").addOption("ko", "한국어")
+        .addOption("auto", t().langAuto).addOption("en", "English").addOption("ko", "한국어").addOption("zh", "中文")
         .setValue(s.language).onChange(async (v) => {
           s.language = v as typeof s.language;
           setLanguage(s.language);

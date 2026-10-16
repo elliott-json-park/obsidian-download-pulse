@@ -5,6 +5,8 @@ Every plugin's downloads, rank and milestones in one dashboard, the insights
 worth acting on, and a live watch on the plugins you compete with. When
 there's something to celebrate, share it as an image card for a post or a story.
 
+<p align="center"><a href="#中文">中文</a></p>
+
 ![Download Pulse in Obsidian: the dashboard tab shows 2,454 downloads across three plugins, an orbit with one planet per plugin and insight cards, and the right sidebar widget shows each plugin's latest day and last two weeks](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/obsidian/1-overview.png)
 
 The community directory gives you one number per plugin: a lifetime total.
@@ -144,7 +146,7 @@ you build in it, or watch a plugin you depend on.
 - **Check for new stats**: by default right after Obsidian publishes the day's file (around 00:25 UTC), and every 30 minutes while it is late; or every 1 to 6 hours, or only when you refresh. It also checks when you open the dashboard or return to Obsidian. The dashboard header shows when the next file is due.
 - **Fill in past history**, **Catch up on missed days**, **Read official history**: see below.
 - **GitHub token**: optional, for release dates and stars beyond GitHub's anonymous limit.
-- **Motion**, **Status bar**, **Milestone notices**, **Language** (English, 한국어).
+- **Motion**, **Status bar**, **Milestone notices**, **Language** (English, 한국어, 中文; follows Obsidian by default).
 - **Export / import history** as JSON, for backup or another device. Import also reads the `history.json` of the standalone HTML dashboard this plugin grew out of.
 
 ---
@@ -182,6 +184,21 @@ mobile) when Obsidian was closed.
 
 There is no telemetry, and the GitHub token, if you add one, stays in
 Obsidian's secret storage.
+
+---
+
+## 中文
+
+**Download Pulse** 是为发布了多个插件的 Obsidian 开发者准备的下载统计面板。每天读取 Obsidian 官方的第三方插件统计，把你所有插件的下载量、排名和里程碑放在一个仪表盘里，并用简短的句子告诉你哪个插件在增长、哪个停滞了。
+
+- **总览与对比**：所有插件一页看完，可按日期或按上架天数并排比较。
+- **发布效果**：每次发布前后 3 天的下载量，以及每个版本的首发表现。
+- **竞品监控**：你在竞品组新增下载中的占比、与前一名的差距和预计超越的日期，以及身后正在追近的插件。
+- **分享卡片**：横版 16:9 或竖版 9:16 的 PNG 图片，方便发帖或发动态。
+- **界面支持中文 · English · 한국어**：默认跟随 Obsidian 的语言，也可以在 设置 → Download Pulse → 语言 中切换。
+- 只读取公开数据，不会发送任何关于你仓库的信息。
+
+安装：设置 → 第三方插件 → 浏览 → 搜索 “Download Pulse”
 
 ---
 

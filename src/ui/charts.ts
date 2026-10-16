@@ -4,7 +4,7 @@ import {
   type Plugin, type Scale, type ScriptableContext, type ScriptableLineSegmentContext, type TooltipItem,
 } from "chart.js";
 import { t } from "../i18n";
-import { alpha, fmt, shortDate } from "./util";
+import { alpha, fmt, shortDate, withCjk } from "./util";
 import { mean } from "../analysis";
 
 Chart.register(LineController, BarController, LineElement, BarElement, PointElement, CategoryScale, LinearScale, LogarithmicScale, Filler, Tooltip);
@@ -41,7 +41,7 @@ export function readPalette(el: HTMLElement): Palette {
     surface: v("--pp-surface", "--background-primary", "#fff"), page: v("--pp-page", "--background-primary", "#fff"),
     up: v("--pp-up", "", dark ? "#0ca30c" : "#006300"), down: v("--pp-down", "", dark ? "#e66767" : "#b3261e"),
     series: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => v(`--pp-s${i}`, "", (dark ? SERIES_DARK : SERIES_LIGHT)[i - 1])),
-    font: cs.fontFamily || body.fontFamily,
+    font: withCjk(cs.fontFamily || body.fontFamily),
   };
 }
 

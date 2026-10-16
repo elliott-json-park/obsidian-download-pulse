@@ -72,7 +72,7 @@ export interface Settings {
   motion: "auto" | "on" | "off";
   statusBar: boolean;
   milestoneNotices: boolean;
-  language: "auto" | "en" | "ko";
+  language: LanguagePref;
   ui: UiState;
   share: ShareOpts;
 }
@@ -100,6 +100,10 @@ export interface Store {
   /** Highest milestone already announced per plugin. */
   celebrated: Record<string, number>;
 }
+
+/** The interface languages to choose from; "auto" follows Obsidian. */
+export const LANGUAGES = ["auto", "en", "ko", "zh"] as const;
+export type LanguagePref = typeof LANGUAGES[number];
 
 export interface PluginData {
   settings: Settings;

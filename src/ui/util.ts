@@ -1,4 +1,4 @@
-import { loc, t } from "../i18n";
+import { lang, loc, t } from "../i18n";
 import { addDays } from "../data/store";
 import { SMALL_BASE, type Momentum } from "../analysis";
 
@@ -47,6 +47,23 @@ export function moTip(mo: Momentum | null | undefined, extra: { mo28?: Momentum 
   return lines.join("\n");
 }
 export const pct1 = (x: number): string => `${fmt1(x * 100)}%`;
+
+// ---------- fonts ----------
+const CJK_SC = ['"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"', '"Noto Sans CJK SC"', '"Noto Sans SC"', '"Source Han Sans SC"'];
+const CJK_KR = ['"Apple SD Gothic Neo"', '"Malgun Gothic"', '"Noto Sans CJK KR"', '"Noto Sans KR"'];
+const GENERIC = /^(sans-serif|serif|system-ui|ui-sans-serif|ui-serif|monospace|cursive|fantasy)$/i;
+/**
+ * A font stack for canvas text with Chinese and Korean faces before the generic family, so a theme font
+ * without CJK glyphs still draws plugin names and labels in a matching face. Chinese faces come first in
+ * Chinese, so shared Han characters take simplified-Chinese shapes.
+ */
+export function withCjk(family: string): string {
+  const parts = family.split(",").map((s) => s.trim()).filter(Boolean);
+  const have = new Set(parts.map((s) => s.replace(/["']/g, "").toLowerCase()));
+  const extra = (lang() === "ko" ? [...CJK_KR, ...CJK_SC] : [...CJK_SC, ...CJK_KR]).filter((f) => !have.has(f.replace(/"/g, "").toLowerCase()));
+  const generic = parts.filter((s) => GENERIC.test(s));
+  return [...parts.filter((s) => !GENERIC.test(s)), ...extra, ...(generic.length ? generic : ["sans-serif"])].join(", ");
+}
 
 // ---------- safe rich text ----------
 /** Appends text with **bold** and {up|…}/{down2|…}/{flat|…} markup (the digit is a strength, 1–3) as DOM nodes. Never parses HTML. */

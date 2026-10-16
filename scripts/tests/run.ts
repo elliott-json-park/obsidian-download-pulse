@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
-import { emptyStore, DEFAULT_SETTINGS, type Settings, type Store } from "../../src/types";
+import { emptyStore, DEFAULT_SETTINGS, LANGUAGES, type Settings, type Store } from "../../src/types";
+import { setLanguage, resolveLanguage, t, loc, lang, type Dict, type Lang } from "../../src/i18n";
 import { setPoint, fillPoint, getPoint, logVersions, rankOf, recordDay, importInto, prune, addDays } from "../../src/data/store";
 import { Model, similarPlugins } from "../../src/analysis";
 import { Engine } from "../../src/data/engine";
@@ -456,6 +457,76 @@ test("cadence counts the quiet time since the last release", () => {
   const today = new Date().toISOString().slice(0, 10);
   s.releases.a = [0, 2, 4].map((n, i) => ({ version: `1.0.${i}`, date: addDays(today, -90 + n) + "T00:00:00Z" }));
   assert.equal(new Model(s).cadence("a"), 30, "three releases in a burst 90 days ago: every 30 days, not every 2");
+});
+
+// ---------- 1.4: interface languages ----------
+const dicts = (): Record<Lang, Dict> => {
+  const out = {} as Record<Lang, Dict>;
+  for (const l of ["en", "ko", "zh"] as const) { setLanguage(l); out[l] = t(); }
+  setLanguage("en");
+  return out;
+};
+
+test("every language has every English key, in the same shape", () => {
+  const all = dicts(), en = all.en as Record<string, unknown>;
+  for (const l of ["ko", "zh"] as const) {
+    const d = all[l] as Record<string, unknown>;
+    assert.deepEqual(Object.keys(d).filter((k) => !(k in en)), [], `${l} has keys English doesn't`);
+    for (const [k, v] of Object.entries(en)) {
+      assert.ok(k in d, `${l} is missing ${k}`);
+      assert.equal(typeof d[k], typeof v, `${l}.${k} is a ${typeof d[k]}, not a ${typeof v}`);
+      if (typeof v === "function") assert.equal((d[k] as () => unknown).length, v.length, `${l}.${k} takes ${v.length} arguments`);
+      if (Array.isArray(v)) assert.equal((d[k] as unknown[]).length, v.length, `${l}.${k} has ${v.length} items`);
+      if (k === "ranges") assert.deepEqual(Object.keys(d[k] as object).sort(), Object.keys(v as object).sort());
+    }
+  }
+});
+
+/** Every text a dictionary entry can give: strings as they are, functions called with sample arguments. */
+const rendered = (v: unknown): unknown[] => {
+  const out = typeof v === "function" ? (v as (...a: string[]) => unknown)(...Array<string>(v.length).fill("3")) : v;
+  return Array.isArray(out) ? out : typeof out === "object" && out ? Object.values(out) : [out];
+};
+
+test("every string renders, with balanced **bold** markup", () => {
+  for (const [l, d] of Object.entries(dicts())) {
+    for (const [k, v] of Object.entries(d as Record<string, unknown>)) {
+      for (const s of rendered(v)) {
+        assert.equal(typeof s, "string", `${l}.${k}`);
+        assert.ok(!(s as string).includes("undefined"), `${l}.${k}: ${s as string}`);
+        assert.equal(((s as string).match(/\*\*/g) ?? []).length % 2, 0, `${l}.${k} has unbalanced **: ${s as string}`);
+      }
+    }
+  }
+});
+
+test("the Chinese interface is translated, not English or Korean left over", () => {
+  const { en, zh } = dicts();
+  const same = Object.keys(en).filter((k) => typeof (en as any)[k] === "string" && (en as any)[k] === (zh as any)[k]);
+  assert.deepEqual(same, ["appName", "glanceTitle"]);
+  const hangul = Object.entries(zh).filter(([, v]) => rendered(v).some((s) => /[\uac00-\ud7af]/.test(String(s)))).map(([k]) => k);
+  assert.deepEqual(hangul, []);
+  assert.equal(zh.longDate(10, 6), "10月6日");
+  assert.equal(zh.weekdayLong(zh.weekdays[0]), "星期一");
+});
+
+test("auto follows Obsidian's language, and an unknown setting falls back to it", () => {
+  assert.equal(resolveLanguage("auto", "zh"), "zh");
+  assert.equal(resolveLanguage("auto", "zh-TW"), "zh");
+  assert.equal(resolveLanguage("auto", "ko"), "ko");
+  assert.equal(resolveLanguage("auto", "fr"), "en");
+  assert.equal(resolveLanguage("auto", ""), "en");
+  assert.equal(resolveLanguage("zh", "ko"), "zh");
+  assert.equal(resolveLanguage("en", "zh"), "en");
+  assert.equal(resolveLanguage("ja", "zh-TW"), "zh");
+  assert.equal(resolveLanguage("constructor", "en"), "en");
+  setLanguage("zh");
+  assert.equal(lang(), "zh");
+  assert.equal(loc(), "zh-CN");
+  setLanguage("en");
+  assert.equal(loc(), "en-US");
+  assert.deepEqual([...LANGUAGES], ["auto", "en", "ko", "zh"]);
+  assert.ok(LANGUAGES.includes(DEFAULT_SETTINGS.language));
 });
 
 // ---------- optional: the real dashboard history on this machine ----------
