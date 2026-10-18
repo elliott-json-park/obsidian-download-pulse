@@ -1,6 +1,6 @@
 import { Events, Platform } from "obsidian";
 import type { Settings, Store } from "../types";
-import { addDays, fillPoint, getPoint, recordDay, sortedDownloads, todayUtc, type RawStats } from "./store";
+import { addDays, fillPoint, getPoint, lastDateOf, recordDay, sortedDownloads, todayUtc, type RawStats } from "./store";
 import { NICE } from "../analysis";
 import { fetchArchive, fetchPluginList, fetchReleases, fetchRepo, fetchStats, HttpError, statsCommits, type StatsCommit } from "./sources";
 
@@ -11,6 +11,8 @@ export interface Host {
   save(): Promise<void>;
   token(): string | undefined;
   celebrate(id: string, milestone: number): void;
+  /** One of your plugins just went missing from the official file. */
+  delisted(id: string, last: number): void;
 }
 
 export type StatusState = "idle" | "loading" | "ok" | "partial" | "offline";
@@ -144,12 +146,29 @@ export class Engine extends Events {
       if (c === head) {
         this.latest = { sha: c.sha, date: c.date, stats, sorted };
         this.absent = new Set(ids.filter((id) => !stats[id]));
+        this.trackDelisted(stats, c.date);
       }
       changed = true;
     }
     this.store.lastSha = head.sha;
     this.store.publishedAt = head.at;
     return changed;
+  }
+
+  /**
+   * Your plugins that were in earlier files but not in the newest one: removed from the directory, or waiting
+   * for Obsidian's review of a new release. Their totals stop at the last file that had them.
+   */
+  private trackDelisted(stats: RawStats, date: string): void {
+    const gone = this.store.delisted;
+    for (const id of this.settings.mine) {
+      if (stats[id]) { delete gone[id]; continue; }
+      const since = lastDateOf(this.store, id);
+      if (!since || since >= date || gone[id]?.since === since) continue;
+      const last = getPoint(this.store, id, since)?.downloads ?? 0;
+      gone[id] = { since, last };
+      this.host.delisted(id, last);
+    }
   }
 
   /**
@@ -257,7 +276,7 @@ export class Engine extends Events {
     return changed;
   }
 
-  /** Release dates and stars. GitHub allows 60 anonymous calls an hour, so this runs twice a day at most. */
+  /** Release dates, main.js downloads and stars. GitHub allows 60 anonymous calls an hour, so this runs twice a day at most. */
   private async readGithub(ids: string[], notes: string[]): Promise<boolean> {
     const token = this.host.token();
     const due = ids.filter((id) => this.settings.meta[id]?.repo && Date.now() - (this.store.githubAt[id] ?? 0) > GITHUB_EVERY);
@@ -271,6 +290,10 @@ export class Engine extends Events {
       try {
         const [releases, info] = await Promise.all([fetchReleases(repo, token), fetchRepo(repo, token)]);
         this.store.releases[id] = releases;
+        // A running total of main.js downloads per day read, so the dashboard can show installs a day.
+        if (mine.has(id) && releases.some((r) => r.installs != null)) {
+          (this.store.installs[id] ??= {})[todayUtc()] = releases.reduce((n, r) => n + (r.installs ?? 0), 0);
+        }
         this.store.repos[id] = info;
         this.store.githubAt[id] = Date.now();
         changed = true;

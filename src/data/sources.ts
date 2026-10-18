@@ -84,12 +84,16 @@ export async function fetchArchive(id: string): Promise<ArchiveHistory | null> {
   }
 }
 
+/** Releases with how often each one's main.js was downloaded — the same call, no extra request. */
 export async function fetchReleases(repo: string, token?: string): Promise<Release[]> {
-  const list = await getJson<{ tag_name: string; published_at: string | null; draft: boolean }[]>(
+  const list = await getJson<{ tag_name: string; published_at: string | null; draft: boolean; assets?: { name: string; download_count: number }[] }[]>(
     `https://api.github.com/repos/${repo}/releases?per_page=100`, token);
   return list
     .filter((r) => !r.draft && r.published_at)
-    .map((r) => ({ version: r.tag_name.replace(/^v/i, ""), date: r.published_at as string }));
+    .map((r) => {
+      const main = r.assets?.find((a) => a.name === "main.js");
+      return { version: r.tag_name.replace(/^v/i, ""), date: r.published_at as string, ...(main ? { installs: main.download_count } : {}) };
+    });
 }
 
 export async function fetchRepo(repo: string, token?: string): Promise<RepoInfo> {

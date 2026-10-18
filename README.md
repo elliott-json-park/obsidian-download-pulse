@@ -51,6 +51,20 @@ suggests similar ones from the directory) and switch a plugin's page to
 
 ![Vault Orrery against four 3D-graph plugins in Obsidian: #2 of 5, 23.6% of the group's new downloads this week, Galaxy View pulling away, no one behind gaining, and a card per plugin with its last 30 days](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/obsidian/2-competitors.png)
 
+**Installs, not just downloads.** The official count also includes Obsidian
+checking for updates. Download Pulse also reads how often each release's
+`main.js` was downloaded, which Obsidian fetches only to install or update a
+plugin. The *Installs (main.js)* tile shows that total and its pace a day.
+
+**A plugin that drops out of the official stats.** When the newest official
+file no longer lists one of your plugins, its total stops at the last value
+instead of looking like a quiet day. The dashboard says so on its page, in
+the overview and in the sidebar, with the installs since then. If milestone
+notices are on, you also get a notice that day. The usual cause is a new
+release waiting for Obsidian's automated review (its Review on
+community.obsidian.md says "Not scanned"); otherwise the plugin was removed
+from the directory.
+
 Plugins of very different sizes switch the cumulative chart to a log scale on
 their own, so a plugin with 600 downloads isn't a flat line under one with 11,000.
 
@@ -146,7 +160,7 @@ you build in it, or watch a plugin you depend on.
 - **Check for new stats**: by default right after Obsidian publishes the day's file (around 00:25 UTC), and every 30 minutes while it is late; or every 1 to 6 hours, or only when you refresh. It also checks when you open the dashboard or return to Obsidian. The dashboard header shows when the next file is due.
 - **Fill in past history**, **Catch up on missed days**, **Read official history**: see below.
 - **GitHub token**: optional, for release dates and stars beyond GitHub's anonymous limit.
-- **Motion**, **Status bar**, **Milestone notices**, **Language** (English, 한국어, 中文; follows Obsidian by default).
+- **Motion**, **Status bar**, **Milestone notices** (also when one of your plugins drops out of the official stats), **Language** (English, 한국어, 中文; follows Obsidian by default).
 - **Export / import history** as JSON, for backup or another device. Import also reads the `history.json` of the standalone HTML dashboard this plugin grew out of.
 
 ---
@@ -173,7 +187,7 @@ nothing about your vault:
 | `api.github.com/repos/obsidianmd/obsidian-releases/commits` | Has a new stats file been published? One small call. | Each check (right after the daily publish by default, when you open the dashboard, and when you return to Obsidian; at most once per 5 minutes) |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/…/community-plugin-stats.json` | The official numbers, about 2.5 MB | Only when Obsidian has published a new file, about once a day |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugins.json` | Plugin names, authors and repos for search and suggestions | When you search or add competitors |
-| `api.github.com/repos/<owner>/<repo>` and `…/releases` | Stars and release dates of followed plugins | At most twice a day per plugin |
+| `api.github.com/repos/<owner>/<repo>` and `…/releases` | Stars and release dates of followed plugins, and `main.js` download counts of your own | At most twice a day per plugin |
 | `yulei-chen.github.io/obsidian-plugin-download-stats/data/plugins/<id>.json` | Earlier daily totals from a public, third-party archive of the official file. Not affiliated with Obsidian. | When you follow a plugin, then every few days. **Turn off with *Fill in past history*.** |
 
 With *Fill in past history* off, history starts the day you follow a plugin.
@@ -194,6 +208,8 @@ Obsidian's secret storage.
 - **总览与对比**：所有插件一页看完，可按日期或按上架天数并排比较。
 - **发布效果**：每次发布前后 3 天的下载量，以及每个版本的首发表现。
 - **竞品监控**：你在竞品组新增下载中的占比、与前一名的差距和预计超越的日期，以及身后正在追近的插件。
+- **实际安装**：每个版本 main.js 的下载次数。Obsidian 只在安装或更新插件时下载它，因此不包含自动的更新检查。
+- **统计中断提醒**：你的插件从最新的官方统计中消失时（通常是新版本在等待 Obsidian 的自动审核），在页面、总览和侧边栏中标出，并发出通知。
 - **分享卡片**：横版 16:9 或竖版 9:16 的 PNG 图片，方便发帖或发动态。
 - **界面支持中文 · English · 한국어**：默认跟随 Obsidian 的语言，也可以在 设置 → Download Pulse → 语言 中切换。
 - 只读取公开数据，不会发送任何关于你仓库的信息。

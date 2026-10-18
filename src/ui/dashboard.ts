@@ -321,7 +321,12 @@ export class DashboardView extends ItemView {
     countUp(heroNum, A?.total ?? 0, this.plugin.motion(), { from: heroNum._val ?? 0, dur: 1600 });
     heroLine.empty(); heroChips.empty(); heroMs.empty();
     if (!A) return;
-    if (scope.line) rich(heroLine, scope.line);
+    const gone = scope.id ? this.m.delisted(scope.id) : null;
+    if (gone) {
+      // Its total stopped at the last file that had it; main.js downloads still show whether people install it.
+      const ins = this.m.installsSince(scope.id as string, gone.since);
+      rich(heroLine, `{down|${t().delistedLine(longDate(gone.date), fmt(gone.last))}}` + (ins ? " · " + t().installsSince(longDate(ins.from), signed(ins.gain)) : ""));
+    } else if (scope.line) rich(heroLine, scope.line);
     else if (A.last) {
       const day = signed(A.last.daily);
       const record = A.lastRank === 1 && A.d.length > 7;
@@ -338,7 +343,7 @@ export class DashboardView extends ItemView {
       const pct = Math.max(2, Math.min(100, (A.total - A.prevM) / (A.next - A.prevM) * 100));
       const head = heroMs.createDiv({ cls: "pp-ms-head" });
       rich(head.createSpan(), t().msTo(fmt(A.next), fmt(A.next - A.total)));
-      head.createSpan({ text: A.etaDate ? t().around(longDate(A.etaDate)) : "" });
+      head.createSpan({ text: A.etaDate && !gone ? t().around(longDate(A.etaDate)) : "" });
       const track = heroMs.createDiv({ cls: "pp-ms-track", attr: { role: "progressbar", "aria-valuemin": String(A.prevM), "aria-valuemax": String(A.next), "aria-valuenow": String(A.total) } });
       const fill = track.createDiv({ cls: "pp-ms-fill" });
       window.requestAnimationFrame(() => window.requestAnimationFrame(() => fill.setCssStyles({ width: pct + "%" })));
@@ -500,6 +505,25 @@ export class DashboardView extends ItemView {
       det.addEventListener("toggle", () => { if (det.open && !det.querySelector("table")) build(); });
     }
     this.revealer.add(el);
+  }
+
+  /** main.js downloads: Obsidian fetches it only to install or update, so the count leaves out update checks and stats bots. */
+  private installsTile(ids: string[], official: number, color?: string): Tile | null {
+    const x = this.m.installs(ids);
+    if (!x) return null;
+    return { label: t().tInstalls, value: x.total, color, sub: x.pace != null ? t().installsPace(fmt1(x.pace)) : t().installsFrom(longDate(x.date)),
+      tip: t().installsTip(official > 0 ? Math.round(x.total / official * 100) + "%" : "–") + (x.pace != null ? "\n" + t().installsVs(x.span, fmt(x.prev)) : "") };
+  }
+
+  /** The first insight when your plugins dropped out of the official file: what stopped, since when, and where to look. */
+  private delistedInsight(ids: string[]): Insight | null {
+    const gone = ids.map((id) => ({ id, d: this.m.delisted(id) })).filter((x): x is { id: string; d: NonNullable<typeof x.d> } => !!x.d);
+    if (!gone.length) return null;
+    const lines = gone.map(({ id, d }) => {
+      const ins = this.m.installsSince(id, d.since);
+      return t().delistedItem(this.nameOf(id), longDate(d.date), fmt(d.last)) + (ins ? " · " + t().installsSince(longDate(ins.from), signed(ins.gain)) : "");
+    });
+    return { k: t().kDelisted, t: ids.length === 1 ? t().delistedHead(longDate(gone[0].d.date)) : gone.map((x) => this.nameOf(x.id)).join(" · "), b: [...lines, t().delistedBody].join("\n") };
   }
 
   // ---------- momentum ----------
@@ -720,6 +744,7 @@ export class DashboardView extends ItemView {
     this.tiles([
       this.moTile(A, full, color),
       { label: t().tLast30, value: this.m.gainOver(full, 30) ?? 0, prefix: "+", bars: full.slice(-30).map((x) => x.daily), color },
+      this.installsTile([id], A.total, color),
       st && { label: t().tRank, value: st.rank, pre: t().rankPre, unit: t().rankPost, sub: t().topPct(fmt1(st.topPct)), spark: full.filter((x) => x.rank).slice(-30).map((x) => -(x.rank as number)), color },
       A.best && { label: t().tBest, value: A.best.daily, prefix: "+", sub: longDate(A.best.date) },
       versions[0] && { label: t().tVersion, value: "v" + versions[0].version, sub: t().thisVersion(fmt(versions[0].total), versions.length) },
@@ -806,6 +831,7 @@ export class DashboardView extends ItemView {
     this.tiles([
       this.moTile(A, full),
       { label: t().tLast30, value: this.m.gainOver(A.full, 30) ?? 0, prefix: "+", bars: full.slice(-30).map((x) => x.daily) },
+      this.installsTile(mine, A.total),
       A.best && { label: t().tBest, value: A.best.daily, prefix: "+", sub: longDate(A.best.date) },
       { label: t().tPlugins, value: t().pluginsAndReleases(mine.length, versionCount), sub: t().tPluginsSub },
       Object.keys(store.repos).some((id) => mine.includes(id)) && { label: t().tStars, value: stars, sub: mine.map((id) => `${this.nameOf(id).split(" ").pop()} ${store.repos[id]?.stars ?? 0}`).join(" · ") },
@@ -1160,6 +1186,8 @@ export class DashboardView extends ItemView {
 
   private totalInsights(A: Analysis): Insight[] {
     const out = this.baseInsights(A), mine = this.plugin.settings.mine;
+    const gone = this.delistedInsight(mine);
+    if (gone) out.unshift(gone);
     if (mine.length > 1) {
       const parts = mine.map((id) => ({ id, a: this.m.analyze(this.m.series(id)) })).filter((x): x is { id: string; a: Analysis } => !!x.a);
       const sum7 = parts.reduce((n, x) => n + x.a.sum7, 0);
@@ -1182,6 +1210,8 @@ export class DashboardView extends ItemView {
 
   private pluginInsights(id: string, A: Analysis): Insight[] {
     const out = this.baseInsights(A);
+    const gone = this.delistedInsight([id]);
+    if (gone) out.unshift(gone);
     const s = this.m.standing(id);
     if (s) out.push({ k: t().kOverall, t: t().overallHead(fmt(s.rank), fmt1(s.topPct)), b: [
       s.climbed7 && s.climbed7 > 0 ? t().climbed7(fmt(s.climbed7)) : s.climbed7 && s.climbed7 < 0 ? t().fell7(fmt(-s.climbed7)) : "",

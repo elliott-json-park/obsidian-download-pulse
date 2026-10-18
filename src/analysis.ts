@@ -158,6 +158,36 @@ export class Model {
     return null;
   }
 
+  /**
+   * One of your plugins the newest official file no longer lists. `date` is its last reading as the dashboard dates
+   * it (the day of the downloads), `since` the date of that file, and `last` the total it stopped at.
+   */
+  delisted(id: string): { date: string; since: string; last: number } | null {
+    const d = this.store.delisted[id], latest = this.latest(id);
+    return d && latest ? { date: latest.date, since: d.since, last: d.last } : null;
+  }
+
+  /**
+   * main.js downloads summed over the plugins' releases: the latest record, and the pace against the record
+   * nearest to a week before it. Only days every plugin has a record for count.
+   */
+  installs(ids: string[]): { date: string; total: number; prev: number | null; span: number; pace: number | null } | null {
+    const sum = (d: string) => ids.every((id) => this.store.installs[id]?.[d] != null) ? ids.reduce((n, id) => n + this.store.installs[id][d], 0) : null;
+    const dates = [...new Set(ids.flatMap((id) => Object.keys(this.store.installs[id] ?? {})))].sort().filter((d) => sum(d) != null);
+    if (!dates.length) return null;
+    const date = dates[dates.length - 1], total = sum(date) as number;
+    const base = dates.filter((d) => d < date).reduce<string | null>((b, d) => !b || Math.abs(dayDiff(d, date) - 7) < Math.abs(dayDiff(b, date) - 7) ? d : b, null);
+    const prev = base ? sum(base) : null, span = base ? dayDiff(base, date) : 0;
+    return { date, total, prev, span, pace: prev != null && span > 0 ? Math.max(0, total - prev) / span : null };
+  }
+
+  /** main.js downloads added since a day: from the last record on or before it to the newest. */
+  installsSince(id: string, date: string): { from: string; to: string; gain: number } | null {
+    const rec = this.store.installs[id] ?? {}, dates = Object.keys(rec).sort();
+    const from = dates.filter((d) => d <= date).pop(), to = dates[dates.length - 1];
+    return from && to && to > from ? { from, to, gain: rec[to] - rec[from] } : null;
+  }
+
   /** Several plugins summed per day. Before a plugin's first reading it counts as 0, after a missed day as its last value. */
   totalSeries(ids: string[]): TotalPt[] {
     const all = ids.map((id) => [id, this.series(id)] as const).filter(([, s]) => s.length);

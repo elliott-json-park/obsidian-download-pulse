@@ -113,7 +113,7 @@ export function recordDay(store: Store, stats: RawStats, date: string, ids: stri
 
 /** Drops what is no longer tracked, so the data file does not grow forever. */
 export function prune(store: Store, keep: Set<string>): void {
-  for (const key of ["series", "versions", "vstart", "releases", "repos", "updated", "archivedAt", "githubAt", "celebrated"] as const) {
+  for (const key of ["series", "versions", "vstart", "releases", "repos", "updated", "archivedAt", "githubAt", "celebrated", "installs", "delisted"] as const) {
     const rec = store[key] as Record<string, unknown>;
     for (const id of Object.keys(rec)) if (!keep.has(id)) delete rec[id];
   }
@@ -141,6 +141,11 @@ export function importInto(store: Store, data: unknown, mine: Set<string>): numb
     if (rel) for (const [id, list] of Object.entries(rel)) if (!store.releases[id]?.length) store.releases[id] = list;
     const repos = o.repos as Store["repos"] | undefined;
     if (repos) for (const [id, r] of Object.entries(repos)) store.repos[id] ??= r;
+    // The dashboard keeps main.js downloads as installs[date][id] = { total }.
+    const installs = o.installs as Record<string, Record<string, { total?: number }>> | undefined;
+    if (installs) for (const [date, byId] of Object.entries(installs)) {
+      for (const [id, x] of Object.entries(byId)) if (typeof x?.total === "number") (store.installs[id] ??= {})[date] ??= x.total;
+    }
     return n;
   }
   const st = (o?.store ?? o) as Partial<Store>;
@@ -154,6 +159,7 @@ export function importInto(store: Store, data: unknown, mine: Set<string>): numb
     for (const [id, r] of Object.entries(st.releases ?? {})) if (!store.releases[id]?.length) store.releases[id] = r;
     for (const [id, r] of Object.entries(st.repos ?? {})) store.repos[id] ??= r;
     if (st.market && (!store.market || st.market.date > store.market.date)) store.market = st.market;
+    for (const [id, days] of Object.entries(st.installs ?? {})) for (const [d, v] of Object.entries(days)) (store.installs[id] ??= {})[d] ??= v;
   }
   return n;
 }

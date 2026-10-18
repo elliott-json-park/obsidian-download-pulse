@@ -4,7 +4,7 @@ import { Model } from "../analysis";
 import { addDays } from "../data/store";
 import { t } from "../i18n";
 import { readPalette } from "./charts";
-import { fmt, moText, moTip, rich, signed, sharedMax, sparkBars, swatch, Tip } from "./util";
+import { fmt, longDate, moText, moTip, rich, signed, sharedMax, sparkBars, swatch, Tip } from "./util";
 
 export const GLANCE_VIEW = "plugin-pulse-glance";
 
@@ -45,6 +45,9 @@ export function renderList(el: HTMLElement, plugin: PulsePlugin, ids: string[], 
     const full = m.series(id), a = m.analyze(full);
     head.createDiv({ cls: "pp-g-total", text: a ? fmt(a.total) : "–" });
     if (!a) { row.createDiv({ cls: "pp-g-sub", text: t().pendingTitle }); return; }
+    // Its numbers stopped with the last official file that had it; say so instead of showing them as today's.
+    const gone = m.delisted(id);
+    if (gone) { rich(row.createDiv({ cls: "pp-g-sub" }), `{down|${t().delistedLine(longDate(gone.date), fmt(gone.last))}}`); sparkBars(row, dailyOf(id), color(id, i), barMax); return; }
     const st = m.standing(id);
     const sub = rich(row.createDiv({ cls: "pp-g-sub" }), `${t().latestShort} **${signed(a.last?.daily)}** · ${t().days7} ${signed(a.sum7)} ${moText(a.mo)}` + (st ? ` · ${t().rankChip(fmt(st.rank))}` : ""));
     o.tip?.bind(sub, moTip(a.mo, { ...a, name: plugin.settings.meta[id]?.name ?? id }), false);

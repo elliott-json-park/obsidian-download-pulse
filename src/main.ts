@@ -112,6 +112,15 @@ export default class PulsePlugin extends Plugin {
     new Notice(msg, 12000);
   }
 
+  /** Without a word, a plugin dropping out of the directory goes unnoticed until someone asks why it can't be found. */
+  delisted(id: string, last: number): void {
+    if (!this.settings.milestoneNotices) return;
+    const msg = createFragment();
+    msg.appendText(t().delistedNotice(this.settings.meta[id]?.name ?? id, fmt(last)) + " ");
+    msg.createEl("a", { text: t().delistedCheck, href: `https://community.obsidian.md/plugins/${encodeURIComponent(id)}` });
+    new Notice(msg, 15000);
+  }
+
   async saveSettings(): Promise<void> {
     await this.saveData({ settings: this.settings, store: this.store } satisfies PluginData);
   }
