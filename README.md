@@ -38,6 +38,36 @@ version. You also get a weekday pattern, a calendar and the milestones it has
 passed. With more than one plugin, *Overview* adds them up and *Compare* puts
 them side by side, by date or by days since listing.
 
+**Every card says what it shows.** Each card opens with one plain sentence, so
+you can read the page top to bottom without decoding a chart: *"651 fewer than
+the week before · biggest drop Vault Pet −451"*, *"Oct expected ~7,854 · 3.5×
+Sep"*, *"Within a week: 250 places up, to Search Templates Library"*.
+
+**Where it's heading, and how sure that is.**
+
+- **Outlook**: the total a week, a month and at the year's end, each with a range. The range comes from how far this plugin's own forecasts missed over the last three weeks, and the card says which way they leaned.
+- **Months**: downloads per calendar month, by plugin, with the current month projected to its end and compared with the same days of the last one.
+- **Where the week's change came from**: the last 7 days against the 7 before, split by plugin, so you see who pulled the sum up or down.
+- **Records**: best day, best week, longest rise, quickest climb between milestones, best rank and best release start. A record set in the last two days is marked *new*.
+- **Overtaking ladder**: the plugins 1, 10, 50, 100, 250, 500 and 1,000 places above you in the overall ranking, and the one just below, with when you'd pass each at both paces.
+- **Release effect** and **release scores**: each release's 3 days before and after, and per plugin how often a release was followed by more downloads.
+- **Race** and **stream**: your plugins' totals as a bar race from the first day, and their daily downloads as one stream whose thickness is that day's pace.
+
+**Official, or without bots.** Bots fetch many old versions of a plugin at
+once, so on such a day several older versions grow by the same small count.
+Download Pulse records each of your plugins' downloads by version every day,
+takes that equal growth out, and with the *Official | Without bots* switch
+shows every number of your own plugins on that basis. Ranks and competitors
+stay official, since the stats file has no versions for other plugins. Bots
+that only fetch the newest version can't be told apart, so *without bots* is
+still an upper bound. The switch appears once there are three days to split;
+importing the standalone dashboard's `history.json` brings the past with it.
+
+**A weekly report in your vault.** *Write weekly report note* (command, the
+note button at the top of the dashboard, or *Settings → Weekly report*) writes
+a Markdown note: the week at a glance, a table by plugin, this week's releases
+and the milestones coming up in the next 30 days.
+
 **Your plugin against its competitors.** Pick the plugins you compete with (it
 suggests similar ones from the directory) and switch a plugin's page to
 *vs competitors*:
@@ -68,9 +98,11 @@ from the directory.
 Plugins of very different sizes switch the cumulative chart to a log scale on
 their own, so a plugin with 600 downloads isn't a flat line under one with 11,000.
 
-**Your theme, light or dark.** The dashboard uses your theme's colors and
-fonts, and keeps a deliberately quiet look: one big number, hairlines, and
-color only where it means a plugin.
+**Your theme, light or dark.** The dashboard uses your theme's fonts and a
+palette of deep, evenly bright colors, and keeps a deliberately quiet look: one
+big number, hairlines, and color only where it means a plugin. The orbit at the
+top puts the biggest plugin on the innermost ring; each planet's speed and
+trail follow its last 7 days, and small moons circle it, one per GitHub star (up to eight).
 
 ![One plugin's page: total, best day, overall rank, the latest release's effect, and daily downloads with release markers](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/obsidian/3-plugin.png)
 
@@ -152,7 +184,7 @@ you build in it, or watch a plugin you depend on.
 
 ### Commands
 
-*Open dashboard* · *Open glance in the sidebar* · *Refresh now* · *Follow a plugin* · *Add a competitor* · *Share a card of your plugins*
+*Open dashboard* · *Open glance in the sidebar* · *Refresh now* · *Follow a plugin* · *Add a competitor* · *Share a card of your plugins* · *Write weekly report note*
 
 ### Settings
 
@@ -160,6 +192,7 @@ you build in it, or watch a plugin you depend on.
 - **Check for new stats**: by default right after Obsidian publishes the day's file (around 00:25 UTC), and every 30 minutes while it is late; or every 1 to 6 hours, or only when you refresh. It also checks when you open the dashboard or return to Obsidian. The dashboard header shows when the next file is due.
 - **Fill in past history**, **Catch up on missed days**, **Read official history**: see below.
 - **GitHub token**: optional, for release dates and stars beyond GitHub's anonymous limit.
+- **Weekly report**: the folder the note goes to, and *Write now*.
 - **Motion**, **Status bar**, **Milestone notices** (also when one of your plugins drops out of the official stats), **Language** (English, 한국어, 中文; follows Obsidian by default).
 - **Export / import history** as JSON, for backup or another device. Import also reads the `history.json` of the standalone HTML dashboard this plugin grew out of.
 
@@ -175,7 +208,9 @@ plugin that ships often collects downloads from its existing users too.
 Download Pulse reads that file and keeps each day's value in its own data file.
 A "day" is the UTC day the downloads happened: the file published just after
 midnight UTC holds the day before, so that is the date it gets. Forecasts and "around
-Oct 6" estimates assume the last 7 days' pace continues.
+Oct 6" estimates assume the last 7 days' pace continues; the range around them is
+how far that assumption missed over the last 21 checks (pooled over your plugins
+for one too new to have enough of its own).
 
 ### Network use
 
@@ -210,6 +245,10 @@ Obsidian's secret storage.
 - **竞品监控**：你在竞品组新增下载中的占比、与前一名的差距和预计超越的日期，以及身后正在追近的插件。
 - **实际安装**：每个版本 main.js 的下载次数。Obsidian 只在安装或更新插件时下载它，因此不包含自动的更新检查。
 - **统计中断提醒**：你的插件从最新的官方统计中消失时（通常是新版本在等待 Obsidian 的自动审核），在页面、总览和侧边栏中标出，并发出通知。
+- **一句话结论**：每张卡片开头用一句话说明要看什么。
+- **展望与记录**：一周、一个月和年底的预测及其范围（依据过去 21 次预测的偏差）、按月下载、本周变化的来源、各项纪录，以及排名上方 1～1,000 名的“超越阶梯”。
+- **官方 | 排除机器人**：机器人会一次下载很多旧版本，Download Pulse 按版本每天记录并剔除这部分，可切换查看你自己插件的数字。
+- **每周报告**：把一周的概况、按插件的表格、本周发布和即将到来的里程碑写成库中的 Markdown 笔记。
 - **分享卡片**：横版 16:9 或竖版 9:16 的 PNG 图片，方便发帖或发动态。
 - **界面支持中文 · English · 한국어**：默认跟随 Obsidian 的语言，也可以在 设置 → Download Pulse → 语言 中切换。
 - 只读取公开数据，不会发送任何关于你仓库的信息。
@@ -236,7 +275,8 @@ npm run harness    # the real plugin in a browser page at http://localhost:5178
 
 The harness runs `src/` with a small stand-in for the `obsidian` module and
 live data. Add `?demo&bare&motion=off&view=vault-orrery&mode=rivals` to open a
-given page. The screenshots above are of the plugin running in Obsidian 1.13. `npx eslint .` runs the
+given page, and `?import` to load `.harness/history.json` (the standalone dashboard's
+history) first. The screenshots above are of the plugin running in Obsidian 1.13. `npx eslint .` runs the
 same rules as Obsidian's plugin review.
 
 Chart.js is bundled into `main.js`. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

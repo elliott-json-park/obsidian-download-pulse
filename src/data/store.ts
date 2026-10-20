@@ -1,4 +1,4 @@
-import type { Series, Store, VersionLog } from "../types";
+import type { Series, Store, VersionDays, VersionLog } from "../types";
 
 export const DAY = 86400000;
 export const addDays = (d: string, n: number): string => new Date(Date.parse(d) + n * DAY).toISOString().slice(0, 10);
@@ -83,6 +83,53 @@ export function logVersions(store: Store, id: string, date: string, versions: Re
   }
 }
 
+/** Days of per-version counts kept per plugin: enough for a year's bot split, small enough for data.json. */
+export const VDAYS_KEEP = 400;
+
+/** Writes one day's count per version. New versions add a column; rows written earlier simply end sooner. */
+export function logVersionDay(store: Store, id: string, date: string, versions: Record<string, number>): void {
+  const vd: VersionDays = (store.vdays[id] ??= { v: [], d: {} });
+  for (const k of Object.keys(versions)) if (!vd.v.includes(k)) vd.v.push(k);
+  vd.d[date] = vd.v.map((k) => versions[k] ?? null);
+  const days = Object.keys(vd.d).sort();
+  for (const d of days.slice(0, Math.max(0, days.length - VDAYS_KEEP))) delete vd.d[d];
+}
+
+/** One day's counts by version name, or null when that day wasn't read. */
+export function versionDay(vd: VersionDays | undefined, date: string): Record<string, number> | null {
+  const row = vd?.d[date];
+  if (!vd || !row) return null;
+  const out: Record<string, number> = {};
+  vd.v.forEach((k, i) => { const n = row[i]; if (n != null) out[k] = n; });
+  return out;
+}
+
+/** Ranks above yours that the overtaking ladder names, and how many days of neighbours to keep. */
+export const LADDER_STEPS = [1000, 500, 250, 100, 50, 10, 1];
+const NEAR_KEEP = 9;
+
+/**
+ * Notes the downloads of the plugins a few steps above each of yours and the one just below, for the
+ * overtaking ladder. The plugins picked on the other days still held are noted too, so their pace can be read.
+ */
+export function recordNeighbours(store: Store, stats: RawStats, date: string, mine: string[]): void {
+  const order = Object.entries(stats).map(([id, s]) => [id, s.downloads || 0] as const).sort((a, b) => b[1] - a[1]);
+  const pos = new Map(order.map(([id], i) => [id, i]));
+  const s: Record<string, (string | null)[]> = {};
+  for (const id of mine) {
+    const i = pos.get(id);
+    if (i == null) continue;
+    s[id] = [...LADDER_STEPS.map((k) => i - k >= 0 ? order[i - k][0] : null), i + 1 < order.length ? order[i + 1][0] : null];
+  }
+  const w = new Set([...mine.filter((id) => s[id]), ...Object.values(s).flat().filter((x): x is string => !!x)]);
+  if (!w.size) return;
+  const keep = store.near.filter((n) => n.date !== date);
+  const all = new Set([...w, ...keep.flatMap((n) => n.w)]);
+  const d: Record<string, number> = {};
+  for (const id of all) if (stats[id]) d[id] = stats[id].downloads || 0;
+  store.near = [...keep, { date, w: [...w], s, d }].sort((a, b) => a.date.localeCompare(b.date)).slice(-NEAR_KEEP);
+}
+
 /** Largest first. */
 export function sortedDownloads(stats: RawStats): number[] {
   return Object.values(stats).map((s) => s.downloads || 0).sort((a, b) => b - a);
@@ -104,16 +151,17 @@ export function recordDay(store: Store, stats: RawStats, date: string, ids: stri
     if (!s) continue;
     setPoint(store, id, date, s.downloads || 0, rankOf(sorted, s.downloads || 0));
     if (s.updated) store.updated[id] = s.updated;
-    if (withVersions.has(id)) logVersions(store, id, date, versionsOf(s));
+    if (withVersions.has(id)) { const v = versionsOf(s); logVersions(store, id, date, v); logVersionDay(store, id, date, v); }
     found++;
   }
   if (!store.market || date >= store.market.date) store.market = { date, downloads: sorted };
+  recordNeighbours(store, stats, date, [...withVersions]);
   return found;
 }
 
 /** Drops what is no longer tracked, so the data file does not grow forever. */
 export function prune(store: Store, keep: Set<string>): void {
-  for (const key of ["series", "versions", "vstart", "releases", "repos", "updated", "archivedAt", "githubAt", "celebrated", "installs", "delisted"] as const) {
+  for (const key of ["series", "versions", "vstart", "releases", "repos", "updated", "archivedAt", "githubAt", "celebrated", "installs", "delisted", "vdays"] as const) {
     const rec = store[key] as Record<string, unknown>;
     for (const id of Object.keys(rec)) if (!keep.has(id)) delete rec[id];
   }
@@ -133,7 +181,7 @@ export function importInto(store: Store, data: unknown, mine: Set<string>): numb
         if (typeof p?.downloads !== "number") continue;
         setPoint(store, id, date, p.downloads, p.rank ?? null);
         if (p.of) store.of[date] = p.of;
-        if (p.versions && mine.has(id)) logVersions(store, id, date, p.versions);
+        if (p.versions && mine.has(id)) { logVersions(store, id, date, p.versions); logVersionDay(store, id, date, p.versions); }
         n++;
       }
     }
@@ -160,6 +208,10 @@ export function importInto(store: Store, data: unknown, mine: Set<string>): numb
     for (const [id, r] of Object.entries(st.repos ?? {})) store.repos[id] ??= r;
     if (st.market && (!store.market || st.market.date > store.market.date)) store.market = st.market;
     for (const [id, days] of Object.entries(st.installs ?? {})) for (const [d, v] of Object.entries(days)) (store.installs[id] ??= {})[d] ??= v;
+    for (const [id, vd] of Object.entries(st.vdays ?? {})) for (const date of Object.keys(vd.d)) {
+      if (!store.vdays[id]?.d[date]) { const row = versionDay(vd, date); if (row) logVersionDay(store, id, date, row); }
+    }
+    if (st.near?.length && !store.near.length) store.near = st.near;
   }
   return n;
 }

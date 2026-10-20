@@ -35,6 +35,22 @@ export interface Release {
   installs?: number;
 }
 
+/**
+ * Your plugins' count per version on each day of the official file, so a day's growth can be split into
+ * bots (many recent versions grow by the same amount) and the rest. `v` names the columns of every row.
+ */
+export interface VersionDays { v: string[]; d: Record<string, (number | null)[]> }
+
+/**
+ * Downloads of the plugins around yours in the overall ranking, on one day of the official file. `w` lists the
+ * ones picked that day (a few steps above each of yours and the one just below); `d` also keeps those picked on the
+ * other days still held, so a plugin's pace can be measured across the days.
+ */
+export interface Neighbours { date: string; w: string[]; s: Record<string, (string | null)[]>; d: Record<string, number> }
+
+/** Which numbers the dashboard shows for your own plugins. Competitors and ranks are always official. */
+export type Basis = "official" | "human";
+
 /** One of your plugins that the newest official file no longer lists. */
 export interface Delisted {
   /** Date of the last official file that still had it. */
@@ -60,6 +76,8 @@ export interface UiState {
   align: "date" | "age";
   /** Inside a plugin's page: its own numbers, or side by side with its competitors. */
   mode: "self" | "rivals";
+  /** Official downloads, or with bots taken out. */
+  basis: Basis;
 }
 
 /** The last choices in the share card dialog. */
@@ -86,6 +104,8 @@ export interface Settings {
   statusBar: boolean;
   milestoneNotices: boolean;
   language: LanguagePref;
+  /** Folder for weekly report notes; empty means the vault root. */
+  reportFolder: string;
   ui: UiState;
   share: ShareOpts;
 }
@@ -116,6 +136,10 @@ export interface Store {
   installs: Record<string, Record<string, number>>;
   /** Your plugins missing from the newest official file. */
   delisted: Record<string, Delisted>;
+  /** Per-version counts by day, for your own plugins (the last 400 days). */
+  vdays: Record<string, VersionDays>;
+  /** The plugins a few steps above and just below yours in the ranking, over the last days read. */
+  near: Neighbours[];
 }
 
 /** The interface languages to choose from; "auto" follows Obsidian. */
@@ -139,12 +163,13 @@ export const DEFAULT_SETTINGS: Settings = {
   statusBar: false,
   milestoneNotices: true,
   language: "auto",
-  ui: { view: "overview", range: "30", align: "date", mode: "self" },
+  reportFolder: "",
+  ui: { view: "overview", range: "30", align: "date", mode: "self", basis: "official" },
   share: { format: "wide", theme: "light", days: 30 },
 };
 
 export const emptyStore = (): Store => ({
   series: {}, of: {}, versions: {}, vstart: {}, releases: {}, repos: {}, updated: {},
   market: null, lastSha: "", publishedAt: 0, lastChecked: 0, archivedAt: {}, githubAt: {}, celebrated: {},
-  installs: {}, delisted: {},
+  installs: {}, delisted: {}, vdays: {}, near: [],
 });

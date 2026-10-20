@@ -29,8 +29,8 @@ export interface CardData {
 }
 
 const INK = {
-  light: { page: "#fbfbfa", ink: "#1d1d1f", mute: "#7a7a80", line: "#e4e3df", ring: "#c9c9cc", up: "#006300", series: SERIES_LIGHT },
-  dark: { page: "#161618", ink: "#f2f2f3", mute: "#8e8e93", line: "#2e2e31", ring: "#4a4a4f", up: "#3fbf5f", series: SERIES_DARK },
+  light: { page: "#fbfbfa", ink: "#1d1d1f", mute: "#7a7a80", line: "#e4e3df", ring: "#c9c9cc", up: "#1a7f4b", series: SERIES_LIGHT },
+  dark: { page: "#161618", ink: "#f2f2f3", mute: "#8e8e93", line: "#2e2e31", ring: "#4a4a4f", up: "#4cbf85", series: SERIES_DARK },
 };
 type Ink = typeof INK.light;
 type Drawn = Row & { color: string };

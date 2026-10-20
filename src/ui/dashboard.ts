@@ -3,15 +3,16 @@ import type PulsePlugin from "../main";
 import { Model, SMALL_BASE, mean, semverCmp, weekdayOf, type Analysis, type Momentum, type Pt } from "../analysis";
 import { addDays, dayDiff, todayUtc } from "../data/store";
 import { loc, t } from "../i18n";
-import type { Range, UiState } from "../types";
+import type { Basis, Range, UiState } from "../types";
 import {
-  Chart, makeChart, readPalette, baseOptions, wipe, crosshair, endLabels, releaseMarkers, forecastZone, peakLabel,
+  Chart, makeChart, readPalette, baseOptions, wipe, crosshair, endLabels, releaseMarkers, forecastZone, forecastBand, peakLabel,
   areaFill, lineDataset, forecastSegment, project, num, dateTick, versionTick, dayTick,
   type Palette, type Marker, type Cfg, type Ds, type TI,
 } from "./charts";
 import { Orrery } from "./orrery";
 import { fmt, fmt1, signed, delta, moText, moTip, shortDate, longDate, rich, Tip, Revealer, countUp, sparkline, sparkBars, swatch, alpha, rgba, pct1, sharedMax } from "./util";
 import { authorSearch } from "./modals";
+import { breakdownCard, dateSpan, impactCard, ladderCard, monthlyCard, outlookCard, raceCard, recordsCard, scoreCard, streamCard } from "./cards";
 
 export const DASHBOARD_VIEW = "plugin-pulse-dashboard";
 
@@ -23,22 +24,23 @@ interface Tile { label: string; color?: string; value: number | string; prefix?:
 /** A table cell: its text, what it sorts by (higher first; text A→Z) and a tooltip, or a renderer of its own. */
 interface Cell { text: string; sort?: number | string | null; tip?: string; render?: (td: HTMLElement) => void }
 type Row = (string | Cell)[];
-interface CardOpts { title: string; desc?: string; wide?: boolean; tall?: boolean; height?: number; legend?: { name: string; color?: string; cls?: string }[] | null }
+/** `lede`: one sentence under the title saying what to look at (rich text). */
+interface CardOpts { title: string; desc?: string; lede?: string; wide?: boolean; tall?: boolean; height?: number; legend?: { name: string; color?: string; cls?: string }[] | null }
 
 export class DashboardView extends ItemView {
-  private tip!: Tip;
+  tip!: Tip;
   private revealer!: Revealer;
   private charts: Chart[] = [];
   private orrery: Orrery | null = null;
-  private P!: Palette;
-  private m!: Model;
+  P!: Palette;
+  m!: Model;
   private colors = new Map<string, string>();
   private observers: ResizeObserver[] = [];
   /** Where each segmented control's highlight was, so a rebuilt control slides from there. */
   private thumbs = new Map<string, { x: number; y: number; w: number; h: number }>();
   private els!: { root: HTMLElement; live: HTMLElement; liveDot: HTMLElement; liveText: HTMLElement; refresh: HTMLElement; motion: HTMLElement; controls: HTMLElement; hero: HTMLElement; heroKicker: HTMLElement; heroNum: HTMLElement & { _val?: number }; heroLine: HTMLElement; heroChips: HTMLElement; heroMs: HTMLElement; body: HTMLElement };
 
-  constructor(leaf: WorkspaceLeaf, private plugin: PulsePlugin) { super(leaf); }
+  constructor(leaf: WorkspaceLeaf, readonly plugin: PulsePlugin) { super(leaf); }
 
   getViewType(): string { return DASHBOARD_VIEW; }
   getDisplayText(): string { return t().appName; }
@@ -80,6 +82,7 @@ export class DashboardView extends ItemView {
       void this.plugin.saveSettings();
       this.applyMotion(); this.render();
     });
+    btn("file-text", t().cmdReport, () => void this.plugin.writeReport());
     btn("image", t().share, () => this.plugin.openShare());
     btn("settings", t().settings, () => this.plugin.openSettings());
 
@@ -148,8 +151,8 @@ export class DashboardView extends ItemView {
   }
 
   // ---------- data helpers ----------
-  private nameOf(id: string) { return this.plugin.settings.meta[id]?.name ?? id; }
-  private colorOf(id: string) { return this.colors.get(id) ?? this.P.ink2; }
+  nameOf(id: string): string { return this.plugin.settings.meta[id]?.name ?? id; }
+  colorOf(id: string): string { return this.colors.get(id) ?? this.P.ink2; }
   private assignColors(ids: string[]) {
     this.colors.clear();
     const S = this.P.series, mine = this.plugin.settings.mine;
@@ -204,8 +207,12 @@ export class DashboardView extends ItemView {
     this.els.body.empty();
     this.P = readPalette(this.contentEl);
     Chart.defaults.font.family = this.P.font;
-    this.m = new Model(this.plugin.store);
     const s = this.plugin.settings, mine = s.mine;
+    this.m = new Model(this.plugin.store, "official", mine);
+    // Bots-excluded numbers once there are a few split days; competitor pages stay official.
+    const rivalsPage = mine.includes(this.ui.view) && this.ui.mode === "rivals" && (s.competitors[this.ui.view] ?? []).length > 0;
+    this.canSplit = this.m.canSplit(mine);
+    if (this.canSplit && this.ui.basis === "human" && !rivalsPage) this.m = this.m.withBasis("human");
 
     if (!mine.length) {
       this.els.controls.empty();
@@ -231,6 +238,10 @@ export class DashboardView extends ItemView {
     note.createEl("summary", { text: t().basisTitle });
     note.createEl("p", { text: t().basis });
   }
+
+  /** Whether any of your plugins has enough days to tell bots apart. */
+  private canSplit = false;
+  private human(): boolean { return this.m.basis === "human"; }
 
   // ---------- controls ----------
   private seg(parent: HTMLElement, items: { key: string; label: string; color?: string }[], current: string, onPick: (k: string) => void, label: string): HTMLElement {
@@ -289,6 +300,12 @@ export class DashboardView extends ItemView {
     if (multi) {
       this.seg(row2, [{ key: "date", label: t().byDate }, { key: "age", label: t().byAge }], this.ui.align, (k) => { this.ui.align = k as UiState["align"]; void this.plugin.saveSettings(); this.render(); }, t().byDate);
     }
+    if (this.canSplit && !(s.mine.includes(view) && this.ui.mode === "rivals" && rivalCount > 0)) {
+      const b = this.seg(row2, [{ key: "official", label: t().basisOfficial }, { key: "human", label: t().basisHuman }], this.ui.basis, (k) => {
+        this.ui.basis = k as Basis; void this.plugin.saveSettings(); this.render();
+      }, t().basisOfficial);
+      this.tip.bind(b, t().basisTip, false);
+    }
     const ranges: Range[] = ["7", "30", "90", "365", "all"];
     this.seg(row2, ranges.map((r) => ({ key: r, label: t().ranges[r] })), this.ui.range, (k) => { this.ui.range = k as Range; void this.plugin.saveSettings(); this.render(); }, t().ranges.all);
   }
@@ -318,6 +335,7 @@ export class DashboardView extends ItemView {
     heroKicker.empty();
     if (scope.color) swatch(heroKicker, scope.color);
     heroKicker.appendText(t().totalOf(scope.name));
+    if (this.human()) this.tip.bind(heroKicker.createSpan({ cls: "pp-basis-tag", text: t().basisHuman }), t().basisTip);
     countUp(heroNum, A?.total ?? 0, this.plugin.motion(), { from: heroNum._val ?? 0, dur: 1600 });
     heroLine.empty(); heroChips.empty(); heroMs.empty();
     if (!A) return;
@@ -343,18 +361,21 @@ export class DashboardView extends ItemView {
       const pct = Math.max(2, Math.min(100, (A.total - A.prevM) / (A.next - A.prevM) * 100));
       const head = heroMs.createDiv({ cls: "pp-ms-head" });
       rich(head.createSpan(), t().msTo(fmt(A.next), fmt(A.next - A.total)));
-      head.createSpan({ text: A.etaDate && !gone ? t().around(longDate(A.etaDate)) : "" });
+      const r = gone ? null : this.m.eta(A);
+      const when = head.createSpan({ text: r ? dateSpan(addDays(A.lastDate, r.lo), r.hi != null ? addDays(A.lastDate, r.hi) : null) : A.etaDate && !gone ? t().around(longDate(A.etaDate)) : "" });
+      if (A.etaDate && !gone) this.tip.bind(when, t().etaTip(fmt1(A.pace), longDate(A.etaDate)));
       const track = heroMs.createDiv({ cls: "pp-ms-track", attr: { role: "progressbar", "aria-valuemin": String(A.prevM), "aria-valuemax": String(A.next), "aria-valuenow": String(A.total) } });
-      const fill = track.createDiv({ cls: "pp-ms-fill" });
-      window.requestAnimationFrame(() => window.requestAnimationFrame(() => fill.setCssStyles({ width: pct + "%" })));
+      // A still bar: no fill animation, just where it stands.
+      track.createDiv({ cls: "pp-ms-fill" }).setCssStyles({ width: pct + "%" });
     }
   }
 
   private syncOrrery(ids: string[], focus: string | null) {
     this.orrery?.sync(ids.map((id) => {
       const a = this.m.analyze(this.m.series(id));
-      return { id, name: this.nameOf(id), total: a?.total ?? 0, daily: a?.last?.daily ?? 0, pace: a?.pace ?? 0, color: this.colorOf(id), rank: this.m.standing(id)?.rank ?? null };
-    }), focus);
+      return { id, name: this.nameOf(id), total: a?.total ?? 0, daily: a?.last?.daily ?? 0, pace: a?.pace ?? 0, sum7: a?.sum7 ?? 0, color: this.colorOf(id),
+        rank: this.m.standing(id)?.rank ?? null, stars: this.plugin.store.repos[id]?.stars ?? 0 };
+    }), focus, ids.some((id) => !this.plugin.settings.mine.includes(id)) ? t().groupTotal : t().allTotal);
   }
 
   // ---------- strips ----------
@@ -398,9 +419,10 @@ export class DashboardView extends ItemView {
 
   private card(o: CardOpts): HTMLElement {
     const g = this.grid();
-    const el = g.createEl("section", { cls: "pp-card" + (o.wide ? " is-wide" : "") });
+    const el = g.createEl("section", { cls: "pp-card" + (o.wide ? " is-wide" : "") + (o.lede ? " has-lede" : "") });
     const h = el.createEl("h2", { text: o.title });
     if (o.desc) this.tip.bind(h, o.desc);
+    if (o.lede) rich(el.createEl("p", { cls: "pp-lede" }), o.lede);
     if (o.legend) {
       const lg = el.createDiv({ cls: "pp-legend" });
       for (const l of o.legend) {
@@ -412,7 +434,7 @@ export class DashboardView extends ItemView {
     return el;
   }
 
-  private chartCard(o: CardOpts, build: () => Cfg): HTMLElement {
+  chartCard(o: CardOpts, build: () => Cfg): HTMLElement {
     const el = this.card(o);
     const box = el.createDiv({ cls: "pp-chart" + (o.tall ? " is-tall" : "") });
     if (o.height) box.setCssStyles({ height: o.height + "px" });
@@ -421,7 +443,7 @@ export class DashboardView extends ItemView {
     return el;
   }
 
-  private domCard(o: CardOpts, fill: (el: HTMLElement) => (() => void) | void): HTMLElement {
+  domCard(o: CardOpts, fill: (el: HTMLElement) => (() => void) | void): HTMLElement {
     const el = this.card(o);
     const after = fill(el);
     // Targets are set a frame after the card appears, so bars and dots move into place.
@@ -585,7 +607,9 @@ export class DashboardView extends ItemView {
     const P = this.P, s = o.s;
     const ma = s.map((_, i) => { const w = s.slice(Math.max(0, i - 6), i + 1).map((x) => x.daily).filter((v): v is number => v != null); return w.length >= 3 ? Math.round(mean(w) * 10) / 10 : null; });
     const peak = s.reduce((b, x, i) => x.daily != null && (b < 0 || x.daily > (s[b].daily as number)) ? i : b, -1);
-    this.chartCard({ title: o.title, desc: o.desc, wide: true, legend: [...(o.legend ?? []), { name: t().ma7, cls: "line" }] }, () => {
+    const recent = s.slice(-7).filter((x) => x.daily != null && !x.gap).map((x) => x.daily as number);
+    const lede = peak < 0 ? "" : t().dailyLede(shortDate(s[peak].date), signed(s[peak].daily)) + (recent.length ? " · " + t().dailyLedeAvg(fmt(mean(recent))) : "");
+    this.chartCard({ title: o.title, desc: o.desc, wide: true, lede, legend: [...(o.legend ?? []), { name: t().ma7, cls: "line" }] }, () => {
       const op = baseOptions(P, this.plugin.motion(), { stacked: true });
       op.layout = { padding: { top: 18 } };
       op.scales.x.ticks.callback = dateTick;
@@ -618,9 +642,12 @@ export class DashboardView extends ItemView {
     const start = addDays(d[0].date, -weekdayOf(d[0].date));
     const byDate = new Map(d.map((x) => [x.date, x.daily]));
     const W = t().weekdays;
-    this.domCard({ title: t().cWhen, desc: t().dWhen, wide: true }, (el) => {
+    const wv = A.weekdayReady ? A.weekday.filter((x) => x.avg != null) as { i: number; avg: number; n: number }[] : [];
+    const hiW = wv.length ? wv.reduce((b, x) => x.avg > b.avg ? x : b) : null, loW = wv.length ? wv.reduce((b, x) => x.avg < b.avg ? x : b) : null;
+    const wLede = hiW && loW && hiW !== loW && hiW.avg > 0 ? t().whenLede(W[hiW.i], W[loW.i], fmt(hiW.avg), fmt(loW.avg)) : t().whenLedeBest(signed(max));
+    this.domCard({ title: t().cWhen, desc: t().dWhen, wide: true, lede: wLede }, (el) => {
       const when = el.createDiv({ cls: "pp-when" });
-      // A single plugin's calendar is shaded with that plugin's color; the overview keeps the neutral blue.
+      // A single plugin's calendar is shaded with that plugin's color; the overview keeps the indigo ramp.
       if (color) when.setCssProps({
         "--pp-h1": alpha(color, 0.14), "--pp-h2": alpha(color, 0.32), "--pp-h3": alpha(color, 0.52),
         "--pp-h4": alpha(color, 0.74), "--pp-h5": color, "--pp-s1": color,
@@ -659,7 +686,10 @@ export class DashboardView extends ItemView {
   private journeyCard(A: Analysis, name: string) {
     if (!A.next && !A.achieved.length) return;
     const list = A.achieved.slice(-6);
-    this.domCard({ title: t().cMilestones, desc: t().dMilestones(name), wide: true }, (el) => {
+    const r = this.m.eta(A);
+    const jLede = list.length >= 2 ? t().jLede(fmt(list[0].m), fmt(list[list.length - 1].m), dayDiff(list[0].date, list[list.length - 1].date)) +
+      (A.next && r ? " · " + t().jLedeNext(fmt(A.next), dateSpan(addDays(A.lastDate, r.lo), r.hi != null ? addDays(A.lastDate, r.hi) : null)) : "") : "";
+    this.domCard({ title: t().cMilestones, desc: t().dMilestones(name), wide: true, lede: jLede }, (el) => {
       const j = el.createDiv({ cls: "pp-journey" });
       list.forEach((x, i) => {
         const prev = i ? list[i - 1] : A.achieved[A.achieved.length - list.length - 1];
@@ -689,7 +719,17 @@ export class DashboardView extends ItemView {
     const labels = all.filter((d) => d >= firstRanked);
     if (labels.length < 2) return;
     const P = this.P;
-    this.chartCard({ title: t().cRank, desc: t().dRank, wide, legend: ids.length > 1 ? series.map((x) => ({ name: this.nameOf(x.id), color: this.colorOf(x.id) })) : null }, () => {
+    const ends = series.map((x) => { const r = x.s.filter((v) => v.rank != null && v.date >= labels[0]); return { id: x.id, a: r[0], b: r[r.length - 1] }; }).filter((e) => e.a && e.b);
+    let rLede = "";
+    if (ends.length) {
+      const top = ends.reduce((m, e) => (e.b.rank as number) < (m.b.rank as number) ? e : m);
+      const climb = ends.reduce((m, e) => (e.a.rank as number) - (e.b.rank as number) > (m.a.rank as number) - (m.b.rank as number) ? e : m);
+      const up = (climb.a.rank as number) - (climb.b.rank as number), multi = ids.length > 1, st = this.m.standing(top.id);
+      rLede = (multi ? this.nameOf(top.id) + " " : "") + `**${t().rankTick(fmt(top.b.rank))}**` + (st ? " " + t().topPct(fmt1(st.topPct)) : "") +
+        (up > 0 ? " · " + t().rankLedeUp(shortDate(climb.a.date), multi ? this.nameOf(climb.id) + " " : "", fmt(up)) : "");
+    }
+    // Names are written at the line ends, so no legend.
+    this.chartCard({ title: t().cRank, desc: t().dRank, wide, lede: rLede }, () => {
       const o = baseOptions(P, this.plugin.motion(), { grow: false });
       o.layout = { padding: { right: 152, top: 8 } };
       o.scales.y.reverse = true; o.scales.y.beginAtZero = false;
@@ -710,7 +750,10 @@ export class DashboardView extends ItemView {
     const arr = this.plugin.store.market?.downloads;
     if (!st.length || !arr?.length) return;
     const sorted = [...st].sort((a, b) => a.topPct - b.topPct);
-    this.domCard({ title: t().cStanding, desc: t().dStanding(fmt(arr.length), fmt(arr[0])), wide: true }, (el) => {
+    const med = arr[Math.floor(arr.length / 2)], best = sorted[0], above = st.filter((x) => x.downloads > med).length;
+    const sLede = st.length === 1 ? t().standLedeOne(fmt1(best.downloads / Math.max(1, med)), fmt(med), fmt1(best.topPct))
+      : t().standLedeMany(st.length, above, fmt(med), this.nameOf(best.id), fmt1(best.topPct));
+    this.domCard({ title: t().cStanding, desc: t().dStanding(fmt(arr.length), fmt(arr[0])), wide: true, lede: sLede }, (el) => {
       const stand = el.createDiv({ cls: "pp-stand" });
       stand.setCssProps({ "--pp-lv": String(st.length) });
       for (const p of [50, 25, 10]) {
@@ -758,24 +801,35 @@ export class DashboardView extends ItemView {
 
     const H = this.horizon(), lastIdx = labels.length - 1;
     const fLabels = [...labels, ...Array.from({ length: H }, (_, i) => addDays(labels[labels.length - 1], i + 1))];
-    const lastTotal = [...s].reverse().find((x) => x.total != null)?.total ?? A.total;
-    this.chartCard({ title: t().cTotal, desc: t().dTotalSelf(H), legend: [{ name: t().actual, cls: "line" }, { name: t().forecast, cls: "dash" }] }, () => {
+    const f = this.m.forecast(A, H);
+    const bandLo = [A.total, ...f.lo], bandHi = [A.total, ...f.hi];
+    this.chartCard({ title: t().cTotal, desc: t().dTotalSelf(H), lede: t().totalLedeSelf(fmt(A.total), H, fmt(f.lo[H - 1]), fmt(f.hi[H - 1])),
+      legend: [{ name: t().actual, cls: "line" }, { name: t().forecast, cls: "dash" }, { name: t().range, cls: "band" }] }, () => {
       const o = baseOptions(P, this.plugin.motion(), { grow: false });
       o.scales.y.beginAtZero = false;
+      o.scales.y.max = undefined;
+      (o.scales.y as unknown as Record<string, unknown>).suggestedMax = bandHi[bandHi.length - 1];
       o.scales.x.ticks.callback = dateTick;
-      o.plugins.tooltip.callbacks = { label: (it: TI) => ` ${it.dataIndex > lastIdx ? t().forecast : t().hTotal} ${fmt(num(it.raw))}`, footer: this.releaseFooter([id]) };
+      o.plugins.tooltip.callbacks = {
+        label: (it: TI) => ` ${it.dataIndex > lastIdx ? t().forecast : t().hTotal} ${fmt(num(it.raw))}` + (it.dataIndex > lastIdx ? ` (${fmt(bandLo[it.dataIndex - lastIdx])}–${fmt(bandHi[it.dataIndex - lastIdx])})` : ""),
+        footer: this.releaseFooter([id]),
+      };
       return {
         type: "line",
-        data: { labels: fLabels, datasets: [{ ...lineDataset(P, [...s.map((x) => x.total), ...project(lastTotal, full.map((x) => x.daily), H)], color, true), label: name, segment: forecastSegment(lastIdx, color) }] },
-        options: o, plugins: [forecastZone(P, lastIdx, A.next), wipe(this.plugin.motion()), crosshair(P), releaseMarkers(P, markers, false)],
+        data: { labels: fLabels, datasets: [{ ...lineDataset(P, [...s.map((x) => x.total), ...f.mid], color, true), label: name, segment: forecastSegment(lastIdx, color) }] },
+        options: o, plugins: [forecastZone(P, lastIdx, A.next), forecastBand(P, lastIdx, bandLo, bandHi, color), wipe(this.plugin.motion()), crosshair(P), releaseMarkers(P, markers, false)],
       };
     });
 
     this.rankCard([id], false);
+    outlookCard(this, A, color);
+    monthlyCard(this, full, A, { color });
 
     if (versions.length) {
       const relDate = Object.fromEntries((store.releases[id] ?? []).map((r) => [r.version, r.date.slice(0, 10)]));
-      this.chartCard({ title: t().cVersions, desc: t().dVersions(versions.length), height: Math.max(240, versions.length * 22 + 40) }, () => {
+      const vTop = versions.reduce((b, x) => x.total > b.total ? x : b, versions[0]);
+      const vLede = t().verLede(versions[0].version, fmt(versions[0].total)) + (vTop !== versions[0] ? " · " + t().verLedeTop(vTop.version, fmt(vTop.total)) : "");
+      this.chartCard({ title: t().cVersions, desc: t().dVersions(versions.length), lede: vLede, height: Math.max(240, versions.length * 22 + 40) }, () => {
         const o = baseOptions(P, this.plugin.motion(), { indexAxis: "y" });
         o.plugins.tooltip.callbacks = { title: (it: TI[]) => "v" + it[0].label, label: (it: TI) => ` ${t().hTotal} ${fmt(num(it.raw))}`, afterLabel: (it: TI) => relDate[it.label] ? t().released2(relDate[it.label]) : "" };
         o.scales.y.ticks.callback = versionTick;
@@ -791,7 +845,10 @@ export class DashboardView extends ItemView {
     const launches = launchesAll;
     if (launches.length) {
       const peak = launches.reduce((b, v, i) => !v.partial && (b < 0 || v.first3 > launches[b].first3) ? i : b, -1);
-      this.chartCard({ title: t().cLaunch, desc: t().dLaunch, height: Math.max(240, launches.length * 22 + 40) }, () => {
+      const newest = launches[launches.length - 1];
+      const lLede = peak < 0 ? "" : t().launchLede(launches[peak].version, fmt(launches[peak].first3)) +
+        (launches[peak] !== newest ? " · " + t().launchLedeNew(newest.version, fmt(newest.first3)) + (newest.partial ? " " + t().inProgressShort : "") : "");
+      this.chartCard({ title: t().cLaunch, desc: t().dLaunch, lede: lLede, height: Math.max(240, launches.length * 22 + 40) }, () => {
         const o = baseOptions(P, this.plugin.motion(), { indexAxis: "y" });
         o.scales.y.ticks.callback = versionTick;
         o.scales.y.ticks.autoSkip = false;
@@ -809,9 +866,12 @@ export class DashboardView extends ItemView {
       });
     }
 
+    impactCard(this, id, full, color);
+    ladderCard(this, id);
     this.standingCard([id]);
     this.whenCard(A, color);
     this.journeyCard(A, name);
+    recordsCard(this, A, id);
     this.tableCard([t().hDate, t().hTotal, t().hNew, t().hRank],
       [...full].reverse().filter((x) => x.total != null).map((x) => [x.date, fmt(x.total), x.daily == null ? "–" : signed(x.daily), x.rank ? fmt(x.rank) : "–"]));
   }
@@ -843,8 +903,12 @@ export class DashboardView extends ItemView {
     const H = this.horizon(), lastIdx = labels.length - 1;
     const fLabels = [...labels, ...Array.from({ length: H }, (_, i) => addDays(labels[labels.length - 1], i + 1))];
     const proj = Object.fromEntries(mine.map((id) => [id, project(s[s.length - 1].parts[id]?.total ?? 0, full.map((x) => x.parts[id]?.daily ?? null), H)]));
-    this.chartCard({ title: t().cTotal, desc: t().dTotalStack(H), wide: true, tall: true, legend: [...legend, { name: t().forecast, cls: "dash" }] }, () => {
+    const f = this.m.forecast(A, H), bandLo = [A.total, ...f.lo], bandHi = [A.total, ...f.hi];
+    const last = full[full.length - 1], big = mine.reduce((b, id) => (last.parts[id]?.total ?? 0) > (last.parts[b]?.total ?? 0) ? id : b, mine[0]);
+    const tLede = t().totalLedeStack(this.nameOf(big), Math.round((last.parts[big]?.total ?? 0) / Math.max(1, last.total) * 100), H, fmt(f.lo[H - 1]), fmt(f.hi[H - 1]));
+    this.chartCard({ title: t().cTotal, desc: t().dTotalStack(H), wide: true, tall: true, lede: tLede, legend: [...legend, { name: t().forecast, cls: "dash" }, { name: t().range, cls: "band" }] }, () => {
       const o = baseOptions(P, this.plugin.motion(), { stacked: true, grow: false });
+      (o.scales.y as unknown as Record<string, unknown>).suggestedMax = bandHi[bandHi.length - 1];
       o.scales.x.ticks.callback = tick;
       o.plugins.tooltip.itemSort = (a: TI, b: TI) => b.datasetIndex - a.datasetIndex;
       o.plugins.tooltip.callbacks = {
@@ -858,16 +922,24 @@ export class DashboardView extends ItemView {
           const c = this.colorOf(id);
           return { ...lineDataset(P, [...s.map((x) => x.parts[id]?.total ?? 0), ...proj[id]], c), label: this.nameOf(id), fill: i === 0 ? "origin" : "-1", backgroundColor: areaFill(c, 0.44, 0.19), segment: forecastSegment(lastIdx, c) };
         }) },
-        options: o, plugins: [forecastZone(P, lastIdx, A.next), wipe(this.plugin.motion()), crosshair(P), releaseMarkers(P, this.markers(mine), false)],
+        options: o, plugins: [forecastZone(P, lastIdx, A.next), forecastBand(P, lastIdx, bandLo, bandHi, P.ink2), wipe(this.plugin.motion()), crosshair(P), releaseMarkers(P, this.markers(mine), false)],
       };
     });
 
     this.dailyChart({ labels, s, ids: mine, title: t().cDaily, desc: t().dDailyStack, legend,
       datasets: mine.map((id) => ({ label: this.nameOf(id), data: s.map((x, i) => (i === 0 && x.daily == null) ? null : x.parts[id]?.daily ?? null), backgroundColor: this.colorOf(id) })) });
-    this.whenCard(A);
-    this.journeyCard(A, t().allPlugins);
+    // Where the week's change came from, next to the months; one alone spans the row.
+    const wf = mine.length > 1 ? breakdownCard(this, full, mine) : null;
+    const mo = monthlyCard(this, full, A, { ids: mine, wide: !wf });
+    if (wf && !mo) wf.addClass("is-wide");
+    outlookCard(this, A, P.ink2);
+    if (mine.length > 1) { raceCard(this, mine); streamCard(this, mine, labels); }
     this.rankCard(mine, true);
     this.standingCard(mine);
+    if (mine.length > 1) { this.releasesCard(mine, labels); scoreCard(this, mine); }
+    this.whenCard(A);
+    this.journeyCard(A, t().allPlugins);
+    recordsCard(this, A);
     this.tableCard([t().hDate, t().hSum, t().hNew, ...mine.map((id) => this.nameOf(id))],
       [...full].reverse().map((x) => [x.date, fmt(x.total), x.daily == null ? "–" : signed(x.daily), ...mine.map((id) => fmt(x.parts[id]?.total))]));
   }
@@ -897,15 +969,28 @@ export class DashboardView extends ItemView {
     const totals = all.map((a) => this.m.latest(a.id)?.downloads ?? 0).filter((v) => v > 0);
     const log = totals.length > 1 && Math.max(...totals) / Math.max(1, Math.min(...totals)) > 10;
 
+    const facts = all.map((a) => {
+      const an = this.m.analyze(a.full), w = smooth(pick(a.full, "daily")).filter((x): x is number => x != null);
+      return { id: a.id, total: this.m.latest(a.id)?.downloads ?? 0, pace: (o.smooth ? w[w.length - 1] : an?.pace) ?? 0 };
+    });
+    const fx = (k: "total" | "pace", hi: boolean) => facts.reduce((b, x) => (hi ? x[k] > b[k] : x[k] < b[k]) ? x : b, facts[0]);
+    const big = fx("total", true), small = fx("total", false), fast = fx("pace", true), slow = fx("pace", false);
+    const ledes: Record<string, string> = facts.length < 2 ? {} : {
+      total: t().sbsTotal(this.nameOf(big.id), fmt(big.total)) + (small !== big && small.total > 0 ? " · " + t().sbsTimes(this.nameOf(small.id), fmt1(big.total / small.total)) : ""),
+      daily: t().sbsPace(this.nameOf(fast.id), fmt1(fast.pace)) + (slow !== fast ? " · " + t().sbsSlow(this.nameOf(slow.id), fmt1(slow.pace)) : ""),
+    };
     for (const [key, ttl, desc, val, tall] of [
       ["total", t().cTotal, t().dCompareTotal, fmt, true],
       ["daily", o.smooth ? t().cDailyMA : t().cDaily, o.smooth ? t().dRivalsDaily : t().dCompareDaily, o.smooth ? fmt1 : signed, false],
     ] as const) {
-      this.chartCard({ title: ttl + (key === "total" && log ? ` · ${t().log}` : ""), desc: desc + ageDesc, wide: true, tall, legend }, () => {
+      // The totals name their lines at the ends, so only the daily chart keeps a legend.
+      this.chartCard({ title: ttl + (key === "total" && log ? ` · ${t().log}` : ""), desc: desc + ageDesc, wide: true, tall, lede: ledes[key], legend: key === "total" ? null : legend }, () => {
         const op = baseOptions(P, this.plugin.motion(), { xTitle: age ? t().xAge : undefined, grow: false, log: key === "total" && log });
         op.layout = { padding: { right: key === "total" ? 152 : 0, top: 8 } };
         op.scales.x.ticks.callback = tick;
-        op.plugins.tooltip.callbacks = { title, label: (it: TI) => ` ${it.dataset.label ?? ""} ${val(num(it.raw))}`, footer: age ? undefined : this.releaseFooter(ids) };
+        // Smoothed lines keep the day's own value in the tooltip.
+        const rawOf = new Map(all.map((a) => [this.nameOf(a.id), pick(a.full, "daily")]));
+        op.plugins.tooltip.callbacks = { title, label: (it: TI) => ` ${it.dataset.label ?? ""} ${val(num(it.raw))}` + (key === "daily" && o.smooth ? ` (${t().thatDay} ${signed(rawOf.get(it.dataset.label ?? "")?.[it.dataIndex])})` : ""), footer: age ? undefined : this.releaseFooter(ids) };
         op.plugins.tooltip.itemSort = (a: TI, b: TI) => (num(b.raw) ?? -1) - (num(a.raw) ?? -1);
         return {
           type: "line",
@@ -928,7 +1013,8 @@ export class DashboardView extends ItemView {
     if (A) this.insights(this.totalInsights(A).filter((x) => [t().kLead, t().kRank, t().kStart].includes(x.k)));
     // The last 14 days on one shared scale, so both shape and size compare.
     this.tiles(this.groupTiles(mine), 8);
-    this.sideBySide(mine, { smooth: false });
+    this.sideBySide(mine, { smooth: true });
+    raceCard(this, mine);
     this.rankCard(mine, true);
     this.standingCard(mine);
 
@@ -992,7 +1078,9 @@ export class DashboardView extends ItemView {
       const tot = group.reduce((n, x) => n + roll(x, d), 0);
       return tot > 0 ? Math.round(roll(id, d) / tot * 1000) / 10 : null;
     }));
-    this.chartCard({ title: t().cShare, desc: t().dShare, wide: true, legend: group.map((id) => ({ name: this.nameOf(id), color: this.colorOf(id) })) }, () => {
+    const mineShare = shares[0].filter((x): x is number => x != null), nowS = mineShare[mineShare.length - 1], wkS = mineShare[mineShare.length - 8];
+    const shLede = nowS != null ? t().shareLede(this.nameOf(me), fmt1(nowS)) + (wkS != null ? " " + t().shareLedeWk(fmt1(wkS)) : "") : "";
+    this.chartCard({ title: t().cShare, desc: t().dShare, wide: true, lede: shLede, legend: group.map((id) => ({ name: this.nameOf(id), color: this.colorOf(id) })) }, () => {
       const o = baseOptions(P, this.plugin.motion(), { stacked: true, grow: false });
       o.scales.y.max = 100;
       o.scales.y.ticks.callback = (v) => v + "%";
@@ -1066,7 +1154,9 @@ export class DashboardView extends ItemView {
 
     const showGroup = grp?.ratio != null && !grp.small;
     const legend = showGroup ? [{ name: t().qGroup(delta(grp?.ratio)), cls: "dash" }] : null;
-    this.domCard({ title: t().cMomentumMap, desc: t().dMomentumMap, wide: true, legend }, (el) => {
+    const fastest = pts.reduce((b, p) => ratio(p.a.mo as Momentum) > ratio(b.a.mo as Momentum) ? p : b, pts[0]), largest = pts.reduce((b, p) => p.a.total > b.a.total ? p : b, pts[0]);
+    const mLede = t().mapLede(this.nameOf(fastest.id), moText(fastest.a.mo)) + (largest !== fastest ? " · " + t().mapLedeBig(this.nameOf(largest.id), moText(largest.a.mo)) : "");
+    this.domCard({ title: t().cMomentumMap, desc: t().dMomentumMap, wide: true, lede: mLede, legend }, (el) => {
       const box = el.createDiv({ cls: "pp-quad" });
       const plot = box.createDiv({ cls: "pp-quad-plot" });
       for (const v of [Y, Y / 2, 0, -Y / 2, -Y]) {
@@ -1128,7 +1218,10 @@ export class DashboardView extends ItemView {
     const store = this.plugin.store;
     if (!labels.length || !ids.some((id) => store.releases[id]?.length)) return;
     const from = labels[0], to = labels[labels.length - 1], span = Math.max(1, dayDiff(from, to));
-    this.domCard({ title: t().cReleases, desc: t().dReleases, wide: true }, (el) => {
+    const inRange = (id: string) => (store.releases[id] ?? []).filter((r) => r.date.slice(0, 10) >= from && r.date.slice(0, 10) <= to).length;
+    const counts = ids.map((id) => ({ id, n: inRange(id) })), all = counts.reduce((n, x) => n + x.n, 0), most = counts.reduce((b, x) => x.n > b.n ? x : b, counts[0]);
+    const relLede = all ? t().relLede(shortDate(from), all) + (ids.length > 1 && most.n ? " · " + t().relLedeMost(this.nameOf(most.id), most.n, fmt1(span / most.n)) : " " + t().relEvery(fmt1(span / all))) : "";
+    this.domCard({ title: t().cReleases, desc: t().dReleases, wide: true, lede: relLede }, (el) => {
       const box = el.createDiv({ cls: "pp-releases" });
       for (const id of ids) {
         const row = box.createDiv({ cls: "pp-rel-row" });
@@ -1143,7 +1236,7 @@ export class DashboardView extends ItemView {
           tick.setCssStyles({ left: dayDiff(from, r.date.slice(0, 10)) / span * 100 + "%" });
           this.tip.bind(tick, `**${this.nameOf(id)} v${r.version}**\n${longDate(r.date.slice(0, 10))}`);
         }
-        row.createDiv({ cls: "pp-rel-n", text: String(rel.length) });
+        row.createDiv({ cls: "pp-rel-n", text: t().relCount(rel.length) });
       }
       const axis = box.createDiv({ cls: "pp-rel-axis" });
       axis.createSpan({ text: shortDate(from) });

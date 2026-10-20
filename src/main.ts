@@ -1,4 +1,5 @@
-import { Notice, Plugin, type WorkspaceLeaf } from "obsidian";
+import { Notice, Plugin, normalizePath, type TFile, type WorkspaceLeaf } from "obsidian";
+import { weeklyReport } from "./report";
 import { DEFAULT_SETTINGS, LANGUAGES, emptyStore, type PluginData, type PluginMeta, type Settings, type Store, type UiState } from "./types";
 import { Engine } from "./data/engine";
 import { addDays, prune, todayUtc } from "./data/store";
@@ -51,6 +52,14 @@ export default class PulsePlugin extends Plugin {
       checkCallback: (checking) => {
         if (!this.settings.mine.length) return false;
         if (!checking) this.openShare();
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "weekly-report", name: t().cmdReport,
+      checkCallback: (checking) => {
+        if (!this.settings.mine.length) return false;
+        if (!checking) void this.writeReport();
         return true;
       },
     });
@@ -190,6 +199,20 @@ export default class PulsePlugin extends Plugin {
 
   openShare(): void {
     new ShareModal(this.app, this).open();
+  }
+
+  /** Writes this week's report as a note (replacing the same day's) and opens it. */
+  async writeReport(): Promise<void> {
+    const r = weeklyReport(this.store, this.settings);
+    if (!r) { new Notice(t().reportEmpty); return; }
+    const folder = normalizePath(this.settings.reportFolder || "/");
+    if (folder !== "/" && !this.app.vault.getFolderByPath(folder)) await this.app.vault.createFolder(folder);
+    const path = normalizePath(`${folder === "/" ? "" : folder + "/"}${t().reportFile(r.date)}.md`);
+    const existing = this.app.vault.getFileByPath(path);
+    let file: TFile;
+    if (existing) { await this.app.vault.modify(existing, r.text); file = existing; } else file = await this.app.vault.create(path, r.text);
+    await this.app.workspace.getLeaf("tab").openFile(file);
+    new Notice(t().reportDone(path));
   }
 
   openCompetitors(id: string, onDone?: () => void): void {

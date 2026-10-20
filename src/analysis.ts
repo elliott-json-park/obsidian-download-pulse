@@ -1,5 +1,6 @@
-import type { Store } from "./types";
-import { addDays, dayDiff, todayUtc } from "./data/store";
+import type { Basis, Store } from "./types";
+import { addDays, dayDiff, getPoint, LADDER_STEPS, todayUtc, versionDay } from "./data/store";
+import { backtest, etaRange, forecast, steadyDailies, type Forecast } from "./forecast";
 
 /** Milestones worth naming. */
 export const NICE = [10, 25, 50, 100, 250, 500, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 250000, 500000, 750000, 1000000, 1500000, 2000000, 3000000, 5000000];
@@ -115,22 +116,112 @@ export interface Analysis {
   run: number; weeks: number[];
 }
 
+/**
+ * Whether a series starts at the plugin's listing (a small first total) rather than partway (followed later without
+ * its past). A listing's first reading counts as new downloads in sums; a partway start's would add years in a day.
+ */
+export function listedAtStart(s: Pt[]): boolean {
+  const known = s.filter((p) => p.total != null);
+  if (!known.length) return false;
+  const after = known.slice(1, 8).filter((p) => !p.gap && p.daily != null).map((p) => p.daily as number);
+  return (known[0].total as number) <= Math.max(50, 7 * mean(after));
+}
+
+export interface RecordItem {
+  k: "bestDay" | "best7" | "rise" | "firstTo" | "quickest" | "bestRank" | "rankJump" | "bestLaunch";
+  value: number; date: string; fresh: boolean;
+  extra: { from?: string; now?: number; m?: number; prev?: number; version?: string };
+}
+
+export interface MonthRow {
+  key: string; sum: number; from: number; to: number; parts: Record<string, number>; byDay: Map<number, number>;
+  current?: boolean; proj?: number; left?: number;
+}
+
+export interface LadderRow {
+  id: string; step: number | "below"; downloads: number; pace: number | null; gap: number; days: number | null; rank: number | null;
+}
+
 export interface Standing {
   id: string; rank: number; of: number; topPct: number; downloads: number;
   climbed7: number | null; need100?: number; band?: number; needBand?: number;
 }
 
+/** One day of a plugin's growth split into bots and the rest (new installs and updates). */
+export interface Split { official: number; bot: number; human: number; span: number }
+
 /** Read-only view of the stored history with the derived numbers the dashboard shows. Built per render. */
 export class Model {
   private cache = new Map<string, Pt[]>();
-  constructor(public store: Store) {}
+  private splits = new Map<string, Map<string, Split>>();
+  /**
+   * `basis: "human"` takes bots out of your own plugins' numbers (`mine`); everything else stays official,
+   * since competitors' versions aren't recorded and ranks compare with every plugin.
+   */
+  constructor(public store: Store, public basis: Basis = "official", private mine: string[] = []) {}
+
+  /** The same history read on another basis. */
+  withBasis(basis: Basis): Model { return basis === this.basis ? this : new Model(this.store, basis, this.mine); }
+
+  /**
+   * The series on this model's basis: with bots taken out for your own plugins on the "human" basis.
+   * Days that can't be split keep their official value.
+   */
+  series(id: string): Pt[] {
+    if (this.basis !== "human" || !this.mine.includes(id)) return this.official(id);
+    const key = "human|" + id, hit = this.cache.get(key);
+    if (hit) return hit;
+    const split = this.split(id);
+    let cum: number | null = null;
+    const out = this.official(id).map((p): Pt => {
+      if (p.total == null) return { ...p };
+      if (cum == null) { cum = p.total; return { ...p }; }
+      const daily = p.daily == null ? null : split.get(p.date)?.human ?? p.daily;
+      cum += daily ?? 0;
+      return { ...p, total: cum, daily };
+    });
+    this.cache.set(key, out);
+    return out;
+  }
+
+  /**
+   * Bots fetch many recent versions at once, so on such a day several older versions grow by the same count k.
+   * Each version's growth up to k is taken as bots; the rest is new installs and updates. k is the median growth
+   * of the versions other than the newest, and a day with fewer than three of them growing had no bots.
+   * Bots fetching only the newest version can't be told apart, so `human` is an upper bound.
+   * Keyed like the series: by the day the downloads happened (the file's date - 1).
+   */
+  split(id: string): Map<string, Split> {
+    const hit = this.splits.get(id);
+    if (hit) return hit;
+    const out = new Map<string, Split>(), vd = this.store.vdays[id];
+    const dates = Object.keys(vd?.d ?? {}).sort();
+    for (let i = 1; i < dates.length; i++) {
+      const a = versionDay(vd, dates[i - 1]), b = versionDay(vd, dates[i]);
+      const pa = getPoint(this.store, id, dates[i - 1]), pb = getPoint(this.store, id, dates[i]);
+      if (!a || !b || !pa || !pb) continue;
+      const vs = Object.keys(b).sort(semverCmp), inc = (v: string) => Math.max(0, b[v] - (a[v] ?? 0));
+      const old = vs.slice(0, -1).map(inc).filter((x) => x > 0).sort((x, y) => x - y);
+      const k = old.length >= 3 ? old[Math.floor((old.length - 1) / 2)] : 0;
+      const official = Math.max(0, pb.downloads - pa.downloads);
+      const bot = Math.min(official, vs.reduce((n, v) => n + Math.min(inc(v), k), 0));
+      out.set(addDays(dates[i], -1), { official, bot, human: official - bot, span: dayDiff(dates[i - 1], dates[i]) });
+    }
+    this.splits.set(id, out);
+    return out;
+  }
+
+  /** Whether any of these plugins has enough split days to show the bots-excluded numbers. */
+  canSplit(ids: string[]): boolean {
+    return ids.some((id) => this.split(id).size >= 3);
+  }
 
   /**
    * Continuous daily series from the first to the last reading. Missed days carry `total: null`.
    * Obsidian publishes the file shortly after midnight UTC, so a reading stored under day D holds the
-   * downloads made on day D − 1. Points here are dated by that day, the day the downloads happened.
+   * downloads made on day D - 1. Points here are dated by that day, the day the downloads happened.
    */
-  series(id: string): Pt[] {
+  official(id: string): Pt[] {
     const hit = this.cache.get(id);
     if (hit) return hit;
     const s = this.store.series[id];
@@ -196,11 +287,7 @@ export class Model {
     const maps = new Map(all.map(([id, s]) => [id, new Map(s.map((p) => [p.date, p.total]))]));
     // A plugin whose history starts at its listing brings its first reading in as new downloads. One followed
     // later without its past (archive off or missing) would add its whole total in a day, so it starts at 0.
-    const listed = new Set(all.filter(([, s]) => {
-      const known = s.filter((p) => p.total != null);
-      const after = known.slice(1, 8).filter((p) => !p.gap && p.daily != null).map((p) => p.daily as number);
-      return (known[0].total as number) <= Math.max(50, 7 * mean(after));
-    }).map(([id]) => id));
+    const listed = new Set(all.filter(([, s]) => listedAtStart(s)).map(([id]) => id));
     const last: Record<string, number | undefined> = {}, carried = new Set<string>(), out: TotalPt[] = [];
     for (let d = first; d <= end; d = addDays(d, 1)) {
       const parts: TotalPt["parts"] = {};
@@ -273,7 +360,7 @@ export class Model {
 
   /** Where a plugin sits among every community plugin. */
   standing(id: string): Standing | null {
-    const s = this.series(id).filter((x) => x.rank != null);
+    const s = this.official(id).filter((x) => x.rank != null);
     if (!s.length) return null;
     const latest = s[s.length - 1];
     const of = this.store.of[addDays(latest.date, 1)] ?? this.store.market?.downloads.length ?? 0;
@@ -338,8 +425,138 @@ export class Model {
     const cum = cumulative(series);
     if (cum.length < 2) return null;
     const end = cum[cum.length - 1];
-    const base = countAt(cum, addDays(end.date, -days)) ?? { c: 0 };
-    return Math.round(end.c - base.c);
+    const base = countAt(cum, addDays(end.date, -days));
+    // A plugin listed inside the window brings its first reading in as new downloads, as `totalSeries` counts it;
+    // leaving it out made the plugins' gains add up to less than their sum's.
+    const first = series.find((p) => p.total != null);
+    const launch = !base && first && listedAtStart(series) ? (first.total as number) : 0;
+    return Math.round(end.c - (base?.c ?? 0) + launch);
+  }
+
+  /** All your plugins' forecast checks together, for plugins too new to have enough of their own. */
+  private poolCache: { 7: number[]; 14: number[] } | null = null;
+  pool(): { 7: number[]; 14: number[] } {
+    if (this.poolCache) return this.poolCache;
+    const p: { 7: number[]; 14: number[] } = { 7: [], 14: [] };
+    for (const id of this.mine) { const b = backtest(steadyDailies(this.series(id))); p[7].push(...b[7]); p[14].push(...b[14]); }
+    p[7].sort((a, b) => a - b); p[14].sort((a, b) => a - b);
+    return (this.poolCache = p);
+  }
+
+  /** Totals 1…H days past the last reading, with the range past forecasts missed by. */
+  forecast(A: Analysis, H: number): Forecast {
+    return forecast(A.total, steadyDailies(A.full), H, this.pool());
+  }
+
+  /** When the next milestone comes: soonest and latest days from the last reading. */
+  eta(A: Analysis): { lo: number; hi: number | null } | null {
+    return A.next ? etaRange(A.total, A.next, steadyDailies(A.full), this.pool()) : null;
+  }
+
+  /**
+   * Records for the records card. Each carries a key, the value, the day it was set and what it adds.
+   * `fresh` is a record set on the latest day or the one before.
+   */
+  records(A: Analysis, id?: string): RecordItem[] {
+    const d = A.d, out: RecordItem[] = [];
+    if (d.length < 7) return out;
+    const push = (k: RecordItem["k"], value: number, date: string, extra: RecordItem["extra"] = {}) =>
+      out.push({ k, value, date, extra, fresh: dayDiff(date, A.lastDate) <= 1 });
+    if (A.best) push("bestDay", A.best.daily, A.best.date);
+    let best7: { n: number; date: string } | null = null;
+    for (let i = 6; i < d.length; i++) {
+      if (dayDiff(d[i - 6].date, d[i].date) !== 6) continue;
+      const n = d.slice(i - 6, i + 1).reduce((s, x) => s + x.daily, 0);
+      if (!best7 || n > best7.n) best7 = { n, date: d[i].date };
+    }
+    if (best7) push("best7", best7.n, best7.date, { from: addDays(best7.date, -6) });
+    // The longest run of days the 7-day average kept rising.
+    const ma = d.map((_, i) => i >= 6 ? mean(d.slice(i - 6, i + 1).map((x) => x.daily)) : null);
+    let run = 0, bestRun = { n: 0, date: "" };
+    for (let i = 1; i < ma.length; i++) {
+      const a = ma[i - 1], b = ma[i];
+      if (a != null && b != null && b > a) { if (++run > bestRun.n) bestRun = { n: run, date: d[i].date }; } else run = 0;
+    }
+    if (bestRun.n >= 2) push("rise", bestRun.n, bestRun.date, { now: run });
+    const first = A.full.find((x) => x.total != null);
+    const firstM = [100000, 10000, 5000, 1000, 500, 100].map((m) => A.achieved.find((x) => x.m === m)).find(Boolean);
+    if (firstM && first) push("firstTo", dayDiff(first.date, firstM.date), firstM.date, { m: firstM.m, from: first.date });
+    // The stretch between milestones climbed fastest, per download.
+    const legs = A.achieved.slice(1).map((x, i) => ({ ...x, prev: A.achieved[i].m, took: dayDiff(A.achieved[i].date, x.date) })).filter((x) => x.took > 0);
+    const quick = legs.reduce<typeof legs[number] | null>((b, x) => !b || x.took / (x.m - x.prev) < b.took / (b.m - b.prev) ? x : b, null);
+    if (quick && legs.length > 1) push("quickest", quick.took, quick.date, { m: quick.m, prev: quick.prev });
+    if (id) {
+      const r = this.official(id).filter((x) => x.rank != null);
+      if (r.length > 1) {
+        const top = r.reduce((b, x) => (x.rank as number) < (b.rank as number) ? x : b);
+        push("bestRank", top.rank as number, top.date, { from: String(r[0].rank) });
+        let jump: { n: number; date: string } | null = null;
+        for (let i = 1; i < r.length; i++) {
+          const j = (r[i - 1].rank as number) - (r[i].rank as number);
+          if (dayDiff(r[i - 1].date, r[i].date) === 1 && (!jump || j > jump.n)) jump = { n: j, date: r[i].date };
+        }
+        if (jump && jump.n > 0) push("rankJump", jump.n, jump.date);
+      }
+      const bv = this.launches(id).filter((v) => v.known && !v.partial).reduce<ReturnType<Model["launches"]>[number] | null>((b, v) => !b || v.first3 > b.first3 ? v : b, null);
+      if (bv) push("bestLaunch", bv.first3, bv.first, { version: bv.version });
+    }
+    return out;
+  }
+
+  /**
+   * Downloads per calendar month, with each plugin's part when `parts` is given. The current month is projected to
+   * its end at the last 7 days' pace. A month the history starts in partway says from which day.
+   */
+  months(full: { date: string; daily: number | null; parts?: Record<string, { daily: number }> }[], A: Analysis): MonthRow[] {
+    const byKey = new Map<string, MonthRow>();
+    for (const x of full) {
+      if (x.daily == null) continue;
+      const key = x.date.slice(0, 7), day = +x.date.slice(8, 10);
+      const m = byKey.get(key) ?? { key, sum: 0, from: day, to: day, parts: {}, byDay: new Map<number, number>() };
+      m.sum += x.daily; m.from = Math.min(m.from, day); m.to = Math.max(m.to, day);
+      m.byDay.set(day, (m.byDay.get(day) ?? 0) + x.daily);
+      if (x.parts) for (const [id, p] of Object.entries(x.parts)) m.parts[id] = (m.parts[id] ?? 0) + p.daily;
+      byKey.set(key, m);
+    }
+    const list = [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key));
+    const cur = list[list.length - 1];
+    if (cur && cur.key === A.lastDate.slice(0, 7)) {
+      const [y, mo] = cur.key.split("-").map(Number), dim = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+      const left = dim - +A.lastDate.slice(8, 10);
+      cur.current = true;
+      cur.proj = left > 0 && A.pace > 0 ? Math.round(A.pace * left) : 0;
+      cur.left = left;
+    }
+    return list;
+  }
+
+  /**
+   * The plugins a few steps above `id` in the overall ranking (and the one just below), their downloads and
+   * daily pace over the days noted, and in how many days `id` would pass them (or they it) at both paces.
+   */
+  ladder(id: string, myPace: number): LadderRow[] | null {
+    const near = this.store.near;
+    if (!near.length) return null;
+    const last = near[near.length - 1], mine = last.d[id];
+    if (mine == null) return null;
+    const paceOf = (x: string): number | null => {
+      const old = near.find((n) => n.d[x] != null && dayDiff(n.date, last.date) >= 1);
+      return old && old !== last ? Math.max(0, (last.d[x] - old.d[x]) / dayDiff(old.date, last.date)) : null;
+    };
+    const rank = this.standing(id)?.rank ?? null;
+    const rows: LadderRow[] = [];
+    const add = (x: string, step: number | "below") => {
+      const v = last.d[x], pace = paceOf(x), gap = v - mine;
+      const closing = pace == null ? null : step === "below" ? pace - myPace : myPace - pace;
+      const days = closing != null && closing > 0 ? Math.ceil(Math.abs(gap) / closing) : null;
+      rows.push({ id: x, step, downloads: v, pace, gap, days, rank: rank != null && typeof step === "number" ? rank - step : rank != null ? rank + 1 : null });
+    };
+    // Who sat at each step that day was noted when it was read (see recordNeighbours).
+    const at = last.s?.[id] ?? [];
+    LADDER_STEPS.forEach((k, n) => { const x = at[n]; if (x && last.d[x] != null) add(x, k); });
+    const below = at[LADDER_STEPS.length];
+    if (below && last.d[below] != null) add(below, "below");
+    return rows.length ? rows : null;
   }
 
   /** Several plugins summed per day, analysed like one. */
@@ -352,7 +569,7 @@ export class Model {
    * how many days until the one behind catches up (null when it is not gaining).
    */
   race(me: string, other: string): { gap: number; myPace: number; theirPace: number; days: number | null } | null {
-    const a = this.analyze(this.series(me)), b = this.analyze(this.series(other));
+    const a = this.analyze(this.official(me)), b = this.analyze(this.official(other));
     if (!a || !b) return null;
     const pace = (x: Analysis) => mean(x.d.slice(-14).filter((p) => !p.gap).map((p) => p.daily));
     const myPace = pace(a), theirPace = pace(b);

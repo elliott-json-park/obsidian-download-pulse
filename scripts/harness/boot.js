@@ -1,6 +1,7 @@
 // Boots the real plugin inside harness.html, with `obsidian` swapped for the shim.
 import { App } from "obsidian";
 import PulsePlugin from "../../src/main";
+import { importInto } from "../../src/data/store";
 
 // ?demo seeds a fresh profile (the author's plugins, Vault Orrery against four 3D-graph plugins);
 // ?view= ?mode= ?range= ?theme=dark ?motion=off pick what a screenshot shows.
@@ -26,6 +27,11 @@ const app = new App();
 const plugin = new PulsePlugin(app, { id: "plugin-pulse", name: "Download Pulse", version: "dev" });
 window.pulse = plugin;
 await plugin.onload();
+// ?import loads .harness/history.json (copy the HTML dashboard's data/history.json there) before the views open.
+if (q.has("import")) {
+  const res = await fetch("/.harness/history.json");
+  if (res.ok) { importInto(plugin.store, await res.json(), new Set(plugin.settings.mine)); await plugin.saveSettings(); }
+}
 await plugin.openDashboard();
 await plugin.openGlance();
 

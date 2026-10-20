@@ -125,6 +125,9 @@ export class PulseSettingTab extends PluginSettingTab {
         new Notice(t().exported(path));
       })) },
       { name: t().sImport, desc: t().sImportDesc, render: (row) => row.addButton((b) => b.setButtonText(t().importBtn).onClick(() => this.pickImport())) },
+      { name: t().sReport, desc: t().sReportDesc, render: (row) => row
+        .addText((tx) => tx.setPlaceholder(t().sReportPh).setValue(s.reportFolder).onChange(async (v) => { s.reportFolder = v.trim(); await plugin.saveSettings(); }))
+        .addButton((b) => b.setButtonText(t().sReportBtn).onClick(() => void plugin.writeReport())) },
       { name: t().sClear, desc: t().sClearDesc, render: (row) => row.addButton((b) => {
         b.setButtonText(t().clearBtn).setDestructive();
         b.onClick(() => {

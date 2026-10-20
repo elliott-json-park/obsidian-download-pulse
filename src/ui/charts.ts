@@ -23,8 +23,9 @@ export interface Palette {
   up: string; down: string; series: string[]; font: string;
 }
 
-export const SERIES_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
-export const SERIES_DARK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
+/** Deep, evenly bright plugin colors: told apart at a glance without any one shouting (indigo, coral, teal, amber, rose…). */
+export const SERIES_LIGHT = ["#4b63d8", "#e07a52", "#2a9d82", "#d4a23f", "#c2678f", "#5f8f3e", "#7c5cc4", "#c94f4f"];
+export const SERIES_DARK = ["#7189f0", "#ec9270", "#4cb89c", "#e2b55c", "#d887ab", "#86b062", "#9d83e0", "#e07272"];
 
 /**
  * Obsidian may render a view or a code block before it is attached to the page, when none of the
@@ -39,7 +40,7 @@ export function readPalette(el: HTMLElement): Palette {
     ink1: v("--pp-ink-1", "--text-normal", "#222"), ink2: v("--pp-ink-2", "--text-muted", "#5c5c5c"), ink3: v("--pp-ink-3", "--text-faint", "#ababab"),
     grid: v("--pp-grid", "--background-modifier-border", "#e3e3e3"), axis: v("--pp-axis", "--background-modifier-border-hover", "#c9c9c9"),
     surface: v("--pp-surface", "--background-primary", "#fff"), page: v("--pp-page", "--background-primary", "#fff"),
-    up: v("--pp-up", "", dark ? "#0ca30c" : "#006300"), down: v("--pp-down", "", dark ? "#e66767" : "#b3261e"),
+    up: v("--pp-up", "", dark ? "#4cbf85" : "#1a7f4b"), down: v("--pp-down", "", dark ? "#ec7a6e" : "#c0392f"),
     series: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => v(`--pp-s${i}`, "", (dark ? SERIES_DARK : SERIES_LIGHT)[i - 1])),
     font: withCjk(cs.fontFamily || body.fontFamily),
   };
@@ -88,13 +89,21 @@ export const dateTick: Tick = function (v) { return shortDate(this.getLabelForVa
 export const versionTick: Tick = function (v) { return "v" + this.getLabelForValue(Number(v)); };
 export const dayTick: Tick = function (v) { return t().dayN(Number(this.getLabelForValue(Number(v)))); };
 
+/** On a log axis, only 1, 2 and 5 × 10ⁿ get a label and a line (a test on the first digit also caught 150, 1,500 and 25,000). */
+export const logMajor = (v: unknown): boolean => {
+  const n = Number(v);
+  if (!(n > 0)) return false;
+  const m = n / 10 ** Math.floor(Math.log10(n));
+  return [1, 2, 5].some((k) => Math.abs(m - k) < 1e-6);
+};
+
 export function baseOptions(P: Palette, motion: boolean, o: { stacked?: boolean; indexAxis?: "x" | "y"; xTitle?: string; grow?: boolean; log?: boolean } = {}): Opts {
   const { stacked = false, indexAxis = "x", xTitle, grow = true, log = false } = o;
   const valueAxis: Axis = {
     type: log ? "logarithmic" : "linear",
     beginAtZero: !log, stacked,
-    grid: { color: P.grid, drawTicks: false }, border: { display: false },
-    ticks: { color: P.ink3, padding: 6, precision: 0, callback: (v) => log && !/^[125]/.test(String(v)) ? "" : fmt(Number(v)) },
+    grid: { color: log ? (c: { tick?: { value?: number } }) => logMajor(c.tick?.value) ? P.grid : "transparent" : P.grid, drawTicks: false }, border: { display: false },
+    ticks: { color: P.ink3, padding: 6, precision: 0, callback: (v) => log && !logMajor(v) ? "" : fmt(Number(v)) },
   };
   const catAxis: Axis = {
     stacked, grid: { display: false }, border: { color: P.axis },
@@ -202,7 +211,7 @@ export function releaseMarkers(P: Palette, entries: Marker[], showLabels = true)
         const i = labels.indexOf(r.date);
         if (i < 0) continue;
         const px = x.getPixelForValue(i);
-        ctx.strokeStyle = r.color; ctx.globalAlpha = 0.55; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+        ctx.strokeStyle = r.color; ctx.globalAlpha = 0.4; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
         ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke();
         ctx.globalAlpha = 1; ctx.setLineDash([]);
         if (showLabels && px - lastLabelX > 38 && px + 30 < a.right + 20) {
@@ -235,6 +244,31 @@ export function forecastZone(P: Palette, lastIdx: number, milestone: number | nu
         ctx.strokeStyle = P.ink3; ctx.setLineDash([2, 4]); ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke(); ctx.setLineDash([]);
         ctx.fillText(t().goal(fmt(milestone)), a.left + 6, py - 6);
+      }
+      ctx.restore();
+    },
+  };
+}
+
+/**
+ * The forecast range as a faint band between its low and high edges, from the last reading on.
+ * `lo` and `hi` start with the last actual total, so the band opens from the line.
+ */
+export function forecastBand(P: Palette, lastIdx: number, lo: number[], hi: number[], color: string): Plugin {
+  return {
+    id: "forecastBand",
+    beforeDatasetsDraw(c) {
+      if (lo.length < 2) return;
+      const { ctx, scales: { x, y } } = c;
+      ctx.save(); ctx.beginPath();
+      lo.forEach((v, i) => { const px = x.getPixelForValue(lastIdx + i), py = y.getPixelForValue(v); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
+      for (let i = hi.length - 1; i >= 0; i--) ctx.lineTo(x.getPixelForValue(lastIdx + i), y.getPixelForValue(hi[i]));
+      ctx.closePath(); ctx.fillStyle = alpha(color, 0.08); ctx.fill();
+      ctx.strokeStyle = alpha(color, 0.3); ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      for (const arr of [lo, hi]) {
+        ctx.beginPath();
+        arr.forEach((v, i) => { const px = x.getPixelForValue(lastIdx + i), py = y.getPixelForValue(v); if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py); });
+        ctx.stroke();
       }
       ctx.restore();
     },
