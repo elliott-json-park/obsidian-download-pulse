@@ -222,7 +222,7 @@ nothing about your vault:
 | `api.github.com/repos/obsidianmd/obsidian-releases/commits` | Has a new stats file been published? One small call. | Each check (right after the daily publish by default, when you open the dashboard, and when you return to Obsidian; at most once per 5 minutes) |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/…/community-plugin-stats.json` | The official numbers, about 2.5 MB | Only when Obsidian has published a new file, about once a day |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugins.json` | Plugin names, authors and repos for search and suggestions | When you search or add competitors |
-| `api.github.com/repos/<owner>/<repo>` and `…/releases` | Stars and release dates of followed plugins, and `main.js` download counts of your own | At most twice a day per plugin |
+| `api.github.com/repos/<owner>/<repo>` and `…/releases` | Stars and release dates of followed plugins, and `main.js` download counts for every followed plugin | At most twice a day per plugin |
 | `yulei-chen.github.io/obsidian-plugin-download-stats/data/plugins/<id>.json` | Earlier daily totals from a public, third-party archive of the official file. Not affiliated with Obsidian. | When you follow a plugin, then every few days. **Turn off with *Fill in past history*.** |
 
 With *Fill in past history* off, history starts the day you follow a plugin.

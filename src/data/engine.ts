@@ -291,7 +291,7 @@ export class Engine extends Events {
         const [releases, info] = await Promise.all([fetchReleases(repo, token), fetchRepo(repo, token)]);
         this.store.releases[id] = releases;
         // A running total of main.js downloads per day read, so the dashboard can show installs a day.
-        if (mine.has(id) && releases.some((r) => r.installs != null)) {
+        if (releases.some((r) => r.installs != null)) {
           (this.store.installs[id] ??= {})[todayUtc()] = releases.reduce((n, r) => n + (r.installs ?? 0), 0);
         }
         this.store.repos[id] = info;
