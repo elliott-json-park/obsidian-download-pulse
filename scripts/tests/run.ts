@@ -313,7 +313,7 @@ test("engine: main.js downloads of your releases are summed per day read", async
   await new Engine(h).refresh();
   assert.deepEqual(h.store.releases.a.map((r) => r.installs), [40, 25]);
   assert.deepEqual(Object.values(h.store.installs.a), [65]);
-  assert.equal(h.store.installs.b, undefined, "competitors' installs are not kept");
+  assert.deepEqual(Object.values(h.store.installs.b), [65], "followed plugins' installs are kept too");
 });
 
 test("installs: pace against the record nearest a week before, and the gain since a day", () => {
