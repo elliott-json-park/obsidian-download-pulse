@@ -18,24 +18,60 @@ export class HttpError extends Error {
   constructor(public status: number, url: string) { super(`${status} — ${url}`); }
 }
 
-async function getJson<T>(url: string, token?: string): Promise<T> {
+type AuthOrder = "anonymous-first" | "token-first";
+
+function authHeaders(token?: string): Record<string, string> {
   const headers: Record<string, string> = {};
-  if (url.startsWith("https://api.github.com/")) {
-    headers.Accept = "application/vnd.github+json";
-    if (token) headers.Authorization = `Bearer ${token}`;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+}
+
+async function getJson<T>(url: string, token?: string, order: AuthOrder = "token-first"): Promise<T> {
+  // Only GitHub's REST API cares about (and benefits from) authentication.
+  // raw.githubusercontent.com and the archive are public and stay anonymous.
+  if (!url.startsWith("https://api.github.com/")) {
+    const headers: Record<string, string> = { Accept: "application/vnd.github+json" };
+    const res = await requestUrl({ url, headers, throw: false });
+    if (res.status < 200 || res.status >= 300) throw new HttpError(res.status, url);
+    return res.json as T;
   }
-  const res = await requestUrl({ url, headers, throw: false });
-  if (res.status < 200 || res.status >= 300) throw new HttpError(res.status, url);
-  return res.json as T;
+
+  const baseHeaders = { Accept: "application/vnd.github+json" };
+  // Build the attempt list from the chosen order, dropping duplicates (e.g. no token).
+  const attempts: (string | undefined)[] = order === "anonymous-first"
+    ? [undefined, token]
+    : [token, undefined];
+  const seen = new Set<string>();
+  const unique: (string | undefined)[] = [];
+  for (const t of attempts) {
+    const key = t ?? "";
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(t);
+  }
+
+  let last: HttpError | null = null;
+  for (const t of unique) {
+    const headers = { ...baseHeaders, ...authHeaders(t) };
+    const res = await requestUrl({ url, headers, throw: false });
+    if (res.status >= 200 && res.status < 300) return res.json as T;
+    last = new HttpError(res.status, url);
+    // A missing resource won't be fixed by switching credentials.
+    if (res.status === 404) throw last;
+    // Other client/server errors: stop trying.
+    if (res.status !== 401 && res.status !== 403 && res.status !== 429) throw last;
+    // Otherwise try the next credential (anonymous <-> token).
+  }
+  throw last ?? new HttpError(0, url);
 }
 
 /** `at` is when the commit was made (ms), which is when Obsidian published that day's numbers. */
 export interface StatsCommit { date: string; sha: string; at: number }
 
 /** Latest commit of the stats file per UTC day, newest first. One API call. */
-export async function statsCommits(count: number, token?: string): Promise<StatsCommit[]> {
+export async function statsCommits(count: number, token?: string, order: AuthOrder = "token-first"): Promise<StatsCommit[]> {
   const list = await getJson<{ sha: string; commit: { committer: { date: string } } }[]>(
-    `https://api.github.com/repos/${RELEASES_REPO}/commits?path=${STATS_FILE}&per_page=${Math.min(100, count)}`, token);
+    `https://api.github.com/repos/${RELEASES_REPO}/commits?path=${STATS_FILE}&per_page=${Math.min(100, count)}`, token, order);
   const byDate = new Map<string, StatsCommit>();
   for (const c of list) {
     const date = c.commit.committer.date.slice(0, 10);
@@ -85,9 +121,9 @@ export async function fetchArchive(id: string): Promise<ArchiveHistory | null> {
 }
 
 /** Releases with how often each one's main.js was downloaded — the same call, no extra request. */
-export async function fetchReleases(repo: string, token?: string): Promise<Release[]> {
+export async function fetchReleases(repo: string, token?: string, order: AuthOrder = "token-first"): Promise<Release[]> {
   const list = await getJson<{ tag_name: string; published_at: string | null; draft: boolean; assets?: { name: string; download_count: number }[] }[]>(
-    `https://api.github.com/repos/${repo}/releases?per_page=100`, token);
+    `https://api.github.com/repos/${repo}/releases?per_page=100`, token, order);
   return list
     .filter((r) => !r.draft && r.published_at)
     .map((r) => {
@@ -96,8 +132,8 @@ export async function fetchReleases(repo: string, token?: string): Promise<Relea
     });
 }
 
-export async function fetchRepo(repo: string, token?: string): Promise<RepoInfo> {
+export async function fetchRepo(repo: string, token?: string, order: AuthOrder = "token-first"): Promise<RepoInfo> {
   const r = await getJson<{ stargazers_count: number; forks_count: number; open_issues_count: number; created_at: string }>(
-    `https://api.github.com/repos/${repo}`, token);
+    `https://api.github.com/repos/${repo}`, token, order);
   return { stars: r.stargazers_count, forks: r.forks_count, openIssues: r.open_issues_count, createdAt: r.created_at };
 }

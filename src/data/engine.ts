@@ -10,6 +10,8 @@ export interface Host {
   store: Store;
   save(): Promise<void>;
   token(): string | undefined;
+  /** "anonymous-first" tries the anonymous request first, then the token; "token-first" the other way around. */
+  authOrder(): "anonymous-first" | "token-first";
   celebrate(id: string, milestone: number): void;
   /** One of your plugins just went missing from the official file. */
   delisted(id: string, last: number): void;
@@ -94,9 +96,10 @@ export class Engine extends Events {
   private async readOfficial(ids: string[], force: boolean, notes: string[]): Promise<boolean> {
     const mine = new Set(this.settings.mine);
     const token = this.host.token();
+    const order = this.host.authOrder();
     let commits: StatsCommit[] | null = null;
     try {
-      commits = await statsCommits(this.settings.catchUp ? 20 : 1, token);
+      commits = await statsCommits(this.settings.catchUp ? 20 : 1, token, order);
     } catch (e) {
       notes.push(e instanceof HttpError && (e.status === 403 || e.status === 429) ? "github-limit" : "github: " + (e as Error).message);
     }
@@ -178,7 +181,7 @@ export class Engine extends Events {
   async backfillOfficial(days: number, onProgress: (done: number, total: number) => void): Promise<number> {
     const ids = this.tracked();
     const mine = new Set(this.settings.mine);
-    const commits = (await statsCommits(Math.min(100, days + 5), this.host.token())).slice(0, days);
+    const commits = (await statsCommits(Math.min(100, days + 5), this.host.token(), this.host.authOrder())).slice(0, days);
     const todo = commits.filter((c) => ids.some((id) => getPoint(this.store, id, c.date)?.rank == null));
     let done = 0;
     for (const c of todo) {
@@ -288,7 +291,8 @@ export class Engine extends Events {
       if (limited) return;
       const repo = this.settings.meta[id].repo;
       try {
-        const [releases, info] = await Promise.all([fetchReleases(repo, token), fetchRepo(repo, token)]);
+        const order = this.host.authOrder();
+     const [releases, info] = await Promise.all([fetchReleases(repo, token, order), fetchRepo(repo, token, order)]);
         this.store.releases[id] = releases;
         // A running total of main.js downloads per day read, so the dashboard can show installs a day.
         if (releases.some((r) => r.installs != null)) {

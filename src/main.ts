@@ -112,6 +112,9 @@ export default class PulsePlugin extends Plugin {
   token(): string | undefined {
     return this.settings.githubSecret ? this.app.secretStorage.getSecret(this.settings.githubSecret) ?? undefined : undefined;
   }
+  authOrder(): "anonymous-first" | "token-first" {
+    return this.settings.githubAuthOrder ?? "token-first";
+  }
   /** The moment worth posting, so the notice carries a way to share it. */
   celebrate(id: string, milestone: number): void {
     const msg = createFragment();
