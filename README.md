@@ -191,7 +191,7 @@ you build in it, or watch a plugin you depend on.
 - **Your plugins**: reorder, remove, and edit each one's competitors.
 - **Check for new stats**: by default right after Obsidian publishes the day's file (around 00:25 UTC), and every 30 minutes while it is late; or every 1 to 6 hours, or only when you refresh. It also checks when you open the dashboard or return to Obsidian. The dashboard header shows when the next file is due.
 - **Fill in past history**, **Catch up on missed days**, **Read official history**: see below.
-- **GitHub token**: optional, for release dates and stars beyond GitHub's anonymous limit.
+- **GitHub token**: optional, for release dates and stars beyond GitHub's anonymous limit. Enter the id of a secret already stored in Obsidian's secret storage that holds a token with no scopes (the requests it makes need none), and choose whether to try the token or the anonymous route first; the other is used as a fallback. A link in settings opens GitHub's token creation page.
 - **Weekly report**: the folder the note goes to, and *Write now*.
 - **Motion**, **Status bar**, **Milestone notices** (also when one of your plugins drops out of the official stats), **Language** (English, 한국어, 中文; follows Obsidian by default).
 - **Export / import history** as JSON, for backup or another device. Import also reads the `history.json` of the standalone HTML dashboard this plugin grew out of.
@@ -214,8 +214,10 @@ for one too new to have enough of its own).
 
 ### Network use
 
-Download Pulse makes only anonymous `GET` requests for public data, and sends
-nothing about your vault:
+Download Pulse makes `GET` requests for public data, and sends nothing about
+your vault. By default the requests are anonymous; an optional GitHub token
+from Obsidian's secret storage can be used to lift GitHub's hourly limit,
+and the requests then carry that token as a bearer credential:
 
 | Request | Why | When |
 |---|---|---|
@@ -232,7 +234,10 @@ day's rank. *Catch up on missed days* does the same for up to 7 days (3 on
 mobile) when Obsidian was closed.
 
 There is no telemetry, and the GitHub token, if you add one, stays in
-Obsidian's secret storage.
+Obsidian's secret storage: the plugin only stores the id of a secret you
+created there, never the token itself. The token needs no scopes: the requests
+it makes only read public release dates and stars. You can choose whether to
+try the token or the anonymous route first; the other is used as a fallback.
 
 ---
 

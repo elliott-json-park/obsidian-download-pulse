@@ -202,6 +202,7 @@ function host(settings: Partial<Settings>) {
     celebrated: [] as [string, number][],
     async save() { h.saves++; },
     token: () => undefined,
+    authOrder: () => "token-first" as const,
     celebrate(id: string, m: number) { h.celebrated.push([id, m]); },
     delistedSeen: [] as [string, number][],
     delisted(id: string, last: number) { h.delistedSeen.push([id, last]); },

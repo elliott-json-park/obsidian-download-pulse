@@ -100,6 +100,8 @@ export interface Settings {
   catchUp: boolean;
   /** Name of an Obsidian secret holding a GitHub token. The token itself is never stored here. */
   githubSecret: string;
+  /** Whether to try anonymous GitHub requests first (token as fallback) or the token first (anonymous as fallback). */
+  githubAuthOrder: GithubAuthOrder;
   motion: "auto" | "on" | "off";
   statusBar: boolean;
   milestoneNotices: boolean;
@@ -146,6 +148,9 @@ export interface Store {
 export const LANGUAGES = ["auto", "en", "ko", "zh"] as const;
 export type LanguagePref = typeof LANGUAGES[number];
 
+/** Order in which authenticated and anonymous GitHub requests are tried. */
+export type GithubAuthOrder = "anonymous-first" | "token-first";
+
 export interface PluginData {
   settings: Settings;
   store: Store;
@@ -159,6 +164,7 @@ export const DEFAULT_SETTINGS: Settings = {
   useArchive: true,
   catchUp: true,
   githubSecret: "",
+  githubAuthOrder: "token-first",
   motion: "auto",
   statusBar: false,
   milestoneNotices: true,

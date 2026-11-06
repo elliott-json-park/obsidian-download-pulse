@@ -1,7 +1,7 @@
-import { App, Notice, PluginSettingTab, SecretComponent, Setting, normalizePath, type SettingDefinitionItem } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting, normalizePath, type SettingDefinitionItem } from "obsidian";
 import type PulsePlugin from "./main";
 import { t, setLanguage } from "./i18n";
-import { emptyStore } from "./types";
+import { emptyStore, type Settings } from "./types";
 import { importInto } from "./data/store";
 import { AuthorModal, CompetitorsModal, PluginSearchModal } from "./ui/modals";
 
@@ -88,12 +88,6 @@ export class PulseSettingTab extends PluginSettingTab {
           b.setDisabled(false);
         }));
       } },
-      { name: t().sToken, desc: t().sTokenDesc, render: (row) => row.addComponent((el) =>
-        new SecretComponent(this.app, el).setValue(s.githubSecret).onChange(async (v) => {
-          s.githubSecret = v;
-          plugin.store.githubAt = {};
-          await plugin.saveSettings();
-        })) },
     ];
 
     const display: Row[] = [
@@ -146,13 +140,36 @@ export class PulseSettingTab extends PluginSettingTab {
           });
         });
       }) },
+    ];
+
+    const network: Row[] = [
       { name: t().sNetwork, desc: t().sNetworkDesc, render: () => undefined },
+      { name: t().sToken, desc: t().sTokenDesc, render: (row) => row.addText((tx) => tx
+        .setPlaceholder(t().sTokenPh)
+        .setValue(s.githubSecret)
+        .onChange(async (v) => {
+          s.githubSecret = v.trim();
+          plugin.store.githubAt = {};
+          await plugin.saveSettings();
+        })) },
+      { name: t().sTokenOrder, desc: t().sTokenOrderDesc, render: (row) => row.addDropdown((d) => {
+        d.addOption("token-first", t().sTokenOrderTokenFirst);
+        d.addOption("anonymous-first", t().sTokenOrderAnonymousFirst);
+        d.setValue(s.githubAuthOrder ?? "token-first").onChange(async (v) => {
+          s.githubAuthOrder = v as Settings["githubAuthOrder"];
+          await plugin.saveSettings();
+        });
+      }) },
+      { name: t().sTokenCreate, desc: t().sTokenCreateDesc, render: (row) => row.addButton((b) => b
+        .setButtonText(t().sTokenCreateBtn)
+        .onClick(() => window.open("https://github.com/settings/tokens/new", "_blank"))) },
     ];
 
     return [
       { heading: t().sPlugins, rows: plugins },
       { heading: t().sUpdates, rows: updates },
       { heading: t().sDisplay, rows: display },
+      { heading: t().sNetwork, rows: network },
       { heading: t().sData, rows: data },
     ];
   }
