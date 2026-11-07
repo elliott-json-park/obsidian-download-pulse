@@ -8,6 +8,7 @@ import { Model, similarPlugins } from "../../src/analysis";
 import { forecast, etaRange } from "../../src/forecast";
 import { weeklyReport } from "../../src/report";
 import { Engine } from "../../src/data/engine";
+import { fetchRepo } from "../../src/data/sources";
 // @ts-expect-error -- plain JS test stub
 import { requests } from "obsidian";
 
@@ -719,6 +720,23 @@ test("weekly report: overview, a table by plugin, and what's coming", () => {
   assert.match(r.text, /\| a \| 390 \|/);
   assert.match(r.text, /v1\.2\.0/);
   assert.equal(weeklyReport(s, { ...DEFAULT_SETTINGS, mine: [] }), null);
+});
+
+test("github: a token GitHub refuses (401) falls back to an anonymous request", async () => {
+  const sent: (string | undefined)[] = [];
+  (globalThis as any).__routes = {
+    "https://api.github.com/repos/": (_url: string, req: any) => {
+      const auth = req.headers?.Authorization as string | undefined;
+      sent.push(auth);
+      return auth ? { status: 401 } : { json: { stargazers_count: 7, forks_count: 1, open_issues_count: 0, created_at: "2026-09-01T00:00:00Z" } };
+    },
+  };
+  const info = await fetchRepo("me/repo", "expired");
+  assert.equal(info.stars, 7);
+  assert.deepEqual(sent, ["Bearer expired", undefined]);
+  sent.length = 0;
+  await fetchRepo("me/repo");
+  assert.deepEqual(sent, [undefined], "no token: one request, no retry");
 });
 
 // ---------- optional: the real dashboard history on this machine ----------

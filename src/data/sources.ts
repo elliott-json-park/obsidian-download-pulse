@@ -24,7 +24,13 @@ async function getJson<T>(url: string, token?: string): Promise<T> {
     headers.Accept = "application/vnd.github+json";
     if (token) headers.Authorization = `Bearer ${token}`;
   }
-  const res = await requestUrl({ url, headers, throw: false });
+  let res = await requestUrl({ url, headers, throw: false });
+  // An expired or revoked token answers 401 even for public data. Ask again without it,
+  // so a stale token costs the higher limit, not the release dates and stars.
+  if (res.status === 401 && headers.Authorization) {
+    delete headers.Authorization;
+    res = await requestUrl({ url, headers, throw: false });
+  }
   if (res.status < 200 || res.status >= 300) throw new HttpError(res.status, url);
   return res.json as T;
 }

@@ -16,7 +16,7 @@ export async function requestUrl(req) {
   requests.push(url);
   for (const [prefix, fn] of Object.entries(globalThis.__routes ?? {})) {
     if (url.startsWith(prefix)) {
-      const r = fn(url);
+      const r = fn(url, typeof req === "string" ? {} : req);
       return { status: r.status ?? 200, json: r.json ?? null, text: JSON.stringify(r.json ?? null), headers: {} };
     }
   }
