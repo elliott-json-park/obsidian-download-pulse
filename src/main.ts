@@ -3,7 +3,8 @@ import { weeklyReport } from "./report";
 import { DEFAULT_SETTINGS, LANGUAGES, emptyStore, type PluginData, type PluginMeta, type Settings, type Store, type UiState } from "./types";
 import { Engine } from "./data/engine";
 import { addDays, prune, todayUtc } from "./data/store";
-import { setLanguage, t } from "./i18n";
+import { lang, setLanguage, t } from "./i18n";
+import { askWhenPicked, maybeAskForStar, starChanged, starOnLoad } from "./star";
 import { PulseSettingTab } from "./settings";
 import { DashboardView, DASHBOARD_VIEW } from "./ui/dashboard";
 import { GlanceView, GLANCE_VIEW, PulseBlock } from "./ui/glance";
@@ -34,10 +35,15 @@ export default class PulsePlugin extends Plugin {
     if (!(LANGUAGES as readonly string[]).includes(this.settings.language)) this.settings.language = "auto";
     this.store = { ...emptyStore(), ...data?.store };
     setLanguage(this.settings.language);
+    const star = starOnLoad(data?.settings?.starAsk, !!data, this.manifest.version);
+    const starMoved = starChanged(data?.settings?.starAsk, star);
+    this.settings.starAsk = star;
+    if (starMoved) await this.saveSettings();
 
     this.engine = new Engine(this);
 
     this.registerView(DASHBOARD_VIEW, (leaf) => new DashboardView(leaf, this));
+    askWhenPicked(this, (leaf) => leaf.view.getViewType() === DASHBOARD_VIEW, () => this.askForStar());
     this.registerView(GLANCE_VIEW, (leaf) => new GlanceView(leaf, this));
     this.registerMarkdownCodeBlockProcessor("plugin-pulse", (source, el, ctx) => ctx.addChild(new PulseBlock(el, this, source)));
     this.addSettingTab(new PulseSettingTab(this.app, this));
@@ -132,6 +138,17 @@ export default class PulsePlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData({ settings: this.settings, store: this.store } satisfies PluginData);
+  }
+
+  /** Show the one-time star request if an update armed it (star.ts). Called when the dashboard opens. */
+  askForStar(): void {
+    maybeAskForStar(this.app, {
+      state: this.settings.starAsk,
+      name: this.manifest.name,
+      url: "https://github.com/elliott-json-park/obsidian-download-pulse",
+      language: lang(),
+      save: (next) => { this.settings.starAsk = next; return this.saveSettings(); },
+    });
   }
 
   motion(): boolean {

@@ -88,6 +88,8 @@ export interface ShareOpts {
 }
 
 export interface Settings {
+  /** The one-time star request after an update (star.ts). */
+  starAsk?: import("./star").StarState;
   /** Plugins whose growth you follow. Usually your own; any listed plugin works. */
   mine: string[];
   /** For each of `mine`, the plugins it is measured against. */

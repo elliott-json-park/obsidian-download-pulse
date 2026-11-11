@@ -60,6 +60,7 @@ export class DashboardView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass("pp-root");
+    this.plugin.askForStar();
     const wrap = root.createDiv({ cls: "pp-wrap" });
     this.tip = new Tip(root);
     this.revealer = new Revealer(() => this.plugin.motion());

@@ -257,6 +257,10 @@ Obsidian's secret storage.
 
 ---
 
+## One-time message
+
+After you update Download Pulse, the first time you open the dashboard yourself, a small window asks you to star this repository on GitHub if you find the plugin useful. It appears **once**, only for people who updated (never on a fresh install), never at start-up, and never again after that. Its button opens the repository in your browser only when you press it, and nothing in the plugin depends on it. There are no other messages or ads.
+
 ## More from the same author
 
 - **[Vault Orrery](https://community.obsidian.md/plugins/vault-orrery)**: your vault as a 3D galaxy, where every folder is a solar system. Replay how it grew, note by note.
