@@ -13,20 +13,18 @@ const pct = (ratio: number | null | undefined): string => {
 
 /**
  * The week in a Markdown note: the overview, a table by plugin, this week's releases and what's coming. Official
- * numbers, with the bots-excluded ones and installs beside them when they are known. Returns null without data.
+ * numbers, with installs beside them when they are known. Returns null without data.
  */
 export function weeklyReport(store: Store, settings: Settings): { date: string; text: string } | null {
   const mine = settings.mine;
   if (!mine.length) return null;
-  const m = new Model(store, "official", mine);
+  const m = new Model(store, mine);
   const one = mine.length === 1;
   const total = one ? null : m.totalSeries(mine);
   const full = total ?? m.series(mine[0]);
   const A: Analysis | null = total ? m.analyzeTotal(total) : m.analyze(m.series(mine[0]));
   if (!A) return null;
   const nameOf = (id: string) => settings.meta[id]?.name ?? id;
-  const human = m.canSplit(mine) ? m.withBasis("human") : null;
-  const H = human ? (one ? human.analyze(human.series(mine[0])) : human.analyzeTotal(human.totalSeries(mine))) : null;
   const inst = m.installs(mine);
   const last = A.lastDate, from = addDays(last, -6);
   const L: string[] = [];
@@ -34,8 +32,8 @@ export function weeklyReport(store: Store, settings: Settings): { date: string; 
   L.push(`> ${t().rpBasis(longDate(last), shortDate(from), shortDate(last), shortDate(addDays(last, -13)), shortDate(addDays(last, -7)))}`, "");
 
   L.push(`## ${t().rpGlance}`, "");
-  L.push(`- ${t().rpTotal(fmt(A.total))}` + (H ? ` · ${t().rpHuman(fmt(H.total))}` : "") + (inst ? ` · ${t().rpInstalls(fmt(inst.total))}` : ""));
-  L.push(`- ${t().rp7(signed(A.sum7), pct(A.mo?.ratio), fmt1(A.pace))}` + (H ? ` · ${t().rpH7(signed(H.sum7), pct(H.mo?.ratio))}` : ""));
+  L.push(`- ${t().rpTotal(fmt(A.total))}` + (inst ? ` · ${t().rpInstalls(fmt(inst.total))}` : ""));
+  L.push(`- ${t().rp7(signed(A.sum7), pct(A.mo?.ratio), fmt1(A.pace))}`);
   const months = m.months(full, A), cur = months[months.length - 1];
   if (cur?.current) {
     const prev = months[months.length - 2], day = +last.slice(8, 10);
@@ -51,15 +49,14 @@ export function weeklyReport(store: Store, settings: Settings): { date: string; 
 
   if (!one) {
     L.push("", `## ${t().rpByPlugin}`, "");
-    const head = t().rpHead(!!human);
+    const head = t().rpHead;
     L.push(`| ${head.join(" | ")} |`, `|${head.map((_, i) => i === 0 || i === head.length - 1 ? "---" : "---:").join("|")}|`);
-    const rows = mine.map((id) => ({ id, a: m.analyze(m.series(id)), h: human?.analyze(human.series(id)) ?? null, st: m.standing(id), gone: m.delisted(id) }))
+    const rows = mine.map((id) => ({ id, a: m.analyze(m.series(id)), st: m.standing(id), gone: m.delisted(id) }))
       .filter((r): r is typeof r & { a: Analysis } => !!r.a).sort((x, y) => y.a.sum7 - x.a.sum7);
     for (const r of rows) {
       const climb = r.st?.climbed7;
       const rank = r.st ? `#${fmt(r.st.rank)}` + (climb && climb > 0 ? ` (▲${fmt(climb)})` : climb && climb < 0 ? ` (▼${fmt(-climb)})` : "") : "–";
-      const cells = [nameOf(r.id), fmt(r.a.total), r.gone ? t().rpStopped : signed(r.a.sum7), r.gone ? "–" : pct(r.a.mo?.ratio),
-        ...(human ? [r.h ? signed(r.h.sum7) : "–"] : []), rank, r.a.next ? `${fmt(r.a.next)}${r.a.etaDate && !r.gone ? ` · ${shortDate(r.a.etaDate)}` : ""}` : "–"];
+      const cells = [nameOf(r.id), fmt(r.a.total), r.gone ? t().rpStopped : signed(r.a.sum7), r.gone ? "–" : pct(r.a.mo?.ratio), rank, r.a.next ? `${fmt(r.a.next)}${r.a.etaDate && !r.gone ? ` · ${shortDate(r.a.etaDate)}` : ""}` : "–"];
       L.push(`| ${cells.join(" | ")} |`);
     }
   }

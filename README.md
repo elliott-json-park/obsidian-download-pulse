@@ -53,16 +53,6 @@ Sep"*, *"Within a week: 250 places up, to Search Templates Library"*.
 - **Release effect** and **release scores**: each release's 3 days before and after, and per plugin how often a release was followed by more downloads.
 - **Race** and **stream**: your plugins' totals as a bar race from the first day, and their daily downloads as one stream whose thickness is that day's pace.
 
-**Official, or without bots.** Bots fetch many old versions of a plugin at
-once, so on such a day several older versions grow by the same small count.
-Download Pulse records each of your plugins' downloads by version every day,
-takes that equal growth out, and with the *Official | Without bots* switch
-shows every number of your own plugins on that basis. Ranks and competitors
-stay official, since the stats file has no versions for other plugins. Bots
-that only fetch the newest version can't be told apart, so *without bots* is
-still an upper bound. The switch appears once there are three days to split;
-importing the standalone dashboard's `history.json` brings the past with it.
-
 **A weekly report in your vault.** *Write weekly report note* (command, the
 note button at the top of the dashboard, or *Settings → Weekly report*) writes
 a Markdown note: the week at a glance, a table by plugin, this week's releases
@@ -247,7 +237,6 @@ Obsidian's secret storage.
 - **统计中断提醒**：你的插件从最新的官方统计中消失时（通常是新版本在等待 Obsidian 的自动审核），在页面、总览和侧边栏中标出，并发出通知。
 - **一句话结论**：每张卡片开头用一句话说明要看什么。
 - **展望与记录**：一周、一个月和年底的预测及其范围（依据过去 21 次预测的偏差）、按月下载、本周变化的来源、各项纪录，以及排名上方 1～1,000 名的“超越阶梯”。
-- **官方 | 排除机器人**：机器人会一次下载很多旧版本，Download Pulse 按版本每天记录并剔除这部分，可切换查看你自己插件的数字。
 - **每周报告**：把一周的概况、按插件的表格、本周发布和即将到来的里程碑写成库中的 Markdown 笔记。
 - **分享卡片**：横版 16:9 或竖版 9:16 的 PNG 图片，方便发帖或发动态。
 - **界面支持中文 · English · 한국어**：默认跟随 Obsidian 的语言，也可以在 设置 → Download Pulse → 语言 中切换。

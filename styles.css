@@ -128,7 +128,6 @@
 .pp-lede b { font-weight: 700; }
 .pp-card-note { color: var(--pp-ink-3); font-size: 12px; line-height: 1.6; margin: 12px 0 0; }
 .pp-card-note b { color: var(--pp-ink-2); }
-.pp-basis-tag { font-size: 11px; font-weight: 650; color: var(--pp-page); background: var(--pp-ink-1); border-radius: 99px; padding: 0 8px; line-height: 17px; }
 .pp-legend-band { width: 14px; height: 9px; border-radius: 2px; background: color-mix(in srgb, var(--pp-ink-3) 28%, transparent); }
 .pp-up { color: var(--pp-up); } .pp-down { color: var(--pp-down); }
 

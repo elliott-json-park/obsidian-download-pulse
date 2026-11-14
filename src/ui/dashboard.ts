@@ -3,7 +3,7 @@ import type PulsePlugin from "../main";
 import { Model, SMALL_BASE, mean, semverCmp, weekdayOf, type Analysis, type Momentum, type Pt } from "../analysis";
 import { addDays, dayDiff, todayUtc } from "../data/store";
 import { loc, t } from "../i18n";
-import type { Basis, Range, UiState } from "../types";
+import type { Range, UiState } from "../types";
 import {
   Chart, makeChart, readPalette, baseOptions, wipe, crosshair, endLabels, releaseMarkers, forecastZone, forecastBand, peakLabel,
   areaFill, lineDataset, forecastSegment, project, num, dateTick, versionTick, dayTick,
@@ -209,11 +209,7 @@ export class DashboardView extends ItemView {
     this.P = readPalette(this.contentEl);
     Chart.defaults.font.family = this.P.font;
     const s = this.plugin.settings, mine = s.mine;
-    this.m = new Model(this.plugin.store, "official", mine);
-    // Bots-excluded numbers once there are a few split days; competitor pages stay official.
-    const rivalsPage = mine.includes(this.ui.view) && this.ui.mode === "rivals" && (s.competitors[this.ui.view] ?? []).length > 0;
-    this.canSplit = this.m.canSplit(mine);
-    if (this.canSplit && this.ui.basis === "human" && !rivalsPage) this.m = this.m.withBasis("human");
+    this.m = new Model(this.plugin.store, mine);
 
     if (!mine.length) {
       this.els.controls.empty();
@@ -239,10 +235,6 @@ export class DashboardView extends ItemView {
     note.createEl("summary", { text: t().basisTitle });
     note.createEl("p", { text: t().basis });
   }
-
-  /** Whether any of your plugins has enough days to tell bots apart. */
-  private canSplit = false;
-  private human(): boolean { return this.m.basis === "human"; }
 
   // ---------- controls ----------
   private seg(parent: HTMLElement, items: { key: string; label: string; color?: string }[], current: string, onPick: (k: string) => void, label: string): HTMLElement {
@@ -301,12 +293,6 @@ export class DashboardView extends ItemView {
     if (multi) {
       this.seg(row2, [{ key: "date", label: t().byDate }, { key: "age", label: t().byAge }], this.ui.align, (k) => { this.ui.align = k as UiState["align"]; void this.plugin.saveSettings(); this.render(); }, t().byDate);
     }
-    if (this.canSplit && !(s.mine.includes(view) && this.ui.mode === "rivals" && rivalCount > 0)) {
-      const b = this.seg(row2, [{ key: "official", label: t().basisOfficial }, { key: "human", label: t().basisHuman }], this.ui.basis, (k) => {
-        this.ui.basis = k as Basis; void this.plugin.saveSettings(); this.render();
-      }, t().basisOfficial);
-      this.tip.bind(b, t().basisTip, false);
-    }
     const ranges: Range[] = ["7", "30", "90", "365", "all"];
     this.seg(row2, ranges.map((r) => ({ key: r, label: t().ranges[r] })), this.ui.range, (k) => { this.ui.range = k as Range; void this.plugin.saveSettings(); this.render(); }, t().ranges.all);
   }
@@ -336,7 +322,6 @@ export class DashboardView extends ItemView {
     heroKicker.empty();
     if (scope.color) swatch(heroKicker, scope.color);
     heroKicker.appendText(t().totalOf(scope.name));
-    if (this.human()) this.tip.bind(heroKicker.createSpan({ cls: "pp-basis-tag", text: t().basisHuman }), t().basisTip);
     countUp(heroNum, A?.total ?? 0, this.plugin.motion(), { from: heroNum._val ?? 0, dur: 1600 });
     heroLine.empty(); heroChips.empty(); heroMs.empty();
     if (!A) return;

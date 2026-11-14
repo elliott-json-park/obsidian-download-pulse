@@ -1,4 +1,4 @@
-import type { Series, Store, VersionDays, VersionLog } from "../types";
+import type { Series, Store, VersionLog } from "../types";
 
 export const DAY = 86400000;
 export const addDays = (d: string, n: number): string => new Date(Date.parse(d) + n * DAY).toISOString().slice(0, 10);
@@ -83,27 +83,6 @@ export function logVersions(store: Store, id: string, date: string, versions: Re
   }
 }
 
-/** Days of per-version counts kept per plugin: enough for a year's bot split, small enough for data.json. */
-export const VDAYS_KEEP = 400;
-
-/** Writes one day's count per version. New versions add a column; rows written earlier simply end sooner. */
-export function logVersionDay(store: Store, id: string, date: string, versions: Record<string, number>): void {
-  const vd: VersionDays = (store.vdays[id] ??= { v: [], d: {} });
-  for (const k of Object.keys(versions)) if (!vd.v.includes(k)) vd.v.push(k);
-  vd.d[date] = vd.v.map((k) => versions[k] ?? null);
-  const days = Object.keys(vd.d).sort();
-  for (const d of days.slice(0, Math.max(0, days.length - VDAYS_KEEP))) delete vd.d[d];
-}
-
-/** One day's counts by version name, or null when that day wasn't read. */
-export function versionDay(vd: VersionDays | undefined, date: string): Record<string, number> | null {
-  const row = vd?.d[date];
-  if (!vd || !row) return null;
-  const out: Record<string, number> = {};
-  vd.v.forEach((k, i) => { const n = row[i]; if (n != null) out[k] = n; });
-  return out;
-}
-
 /** Ranks above yours that the overtaking ladder names, and how many days of neighbours to keep. */
 export const LADDER_STEPS = [1000, 500, 250, 100, 50, 10, 1];
 const NEAR_KEEP = 9;
@@ -151,7 +130,7 @@ export function recordDay(store: Store, stats: RawStats, date: string, ids: stri
     if (!s) continue;
     setPoint(store, id, date, s.downloads || 0, rankOf(sorted, s.downloads || 0));
     if (s.updated) store.updated[id] = s.updated;
-    if (withVersions.has(id)) { const v = versionsOf(s); logVersions(store, id, date, v); logVersionDay(store, id, date, v); }
+    if (withVersions.has(id)) { const v = versionsOf(s); logVersions(store, id, date, v); }
     found++;
   }
   if (!store.market || date >= store.market.date) store.market = { date, downloads: sorted };
@@ -161,7 +140,7 @@ export function recordDay(store: Store, stats: RawStats, date: string, ids: stri
 
 /** Drops what is no longer tracked, so the data file does not grow forever. */
 export function prune(store: Store, keep: Set<string>): void {
-  for (const key of ["series", "versions", "vstart", "releases", "repos", "updated", "archivedAt", "githubAt", "celebrated", "installs", "delisted", "vdays"] as const) {
+  for (const key of ["series", "versions", "vstart", "releases", "repos", "updated", "archivedAt", "githubAt", "celebrated", "installs", "delisted"] as const) {
     const rec = store[key] as Record<string, unknown>;
     for (const id of Object.keys(rec)) if (!keep.has(id)) delete rec[id];
   }
@@ -181,7 +160,7 @@ export function importInto(store: Store, data: unknown, mine: Set<string>): numb
         if (typeof p?.downloads !== "number") continue;
         setPoint(store, id, date, p.downloads, p.rank ?? null);
         if (p.of) store.of[date] = p.of;
-        if (p.versions && mine.has(id)) { logVersions(store, id, date, p.versions); logVersionDay(store, id, date, p.versions); }
+        if (p.versions && mine.has(id)) { logVersions(store, id, date, p.versions); }
         n++;
       }
     }
@@ -208,9 +187,6 @@ export function importInto(store: Store, data: unknown, mine: Set<string>): numb
     for (const [id, r] of Object.entries(st.repos ?? {})) store.repos[id] ??= r;
     if (st.market && (!store.market || st.market.date > store.market.date)) store.market = st.market;
     for (const [id, days] of Object.entries(st.installs ?? {})) for (const [d, v] of Object.entries(days)) (store.installs[id] ??= {})[d] ??= v;
-    for (const [id, vd] of Object.entries(st.vdays ?? {})) for (const date of Object.keys(vd.d)) {
-      if (!store.vdays[id]?.d[date]) { const row = versionDay(vd, date); if (row) logVersionDay(store, id, date, row); }
-    }
     if (st.near?.length && !store.near.length) store.near = st.near;
   }
   return n;

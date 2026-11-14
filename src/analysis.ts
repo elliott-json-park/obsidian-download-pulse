@@ -1,5 +1,5 @@
-import type { Basis, Store } from "./types";
-import { addDays, dayDiff, getPoint, LADDER_STEPS, todayUtc, versionDay } from "./data/store";
+import type { Store } from "./types";
+import { addDays, dayDiff, LADDER_STEPS, todayUtc } from "./data/store";
 import { backtest, etaRange, forecast, steadyDailies, type Forecast } from "./forecast";
 
 /** Milestones worth naming. */
@@ -147,74 +147,14 @@ export interface Standing {
   climbed7: number | null; need100?: number; band?: number; needBand?: number;
 }
 
-/** One day of a plugin's growth split into bots and the rest (new installs and updates). */
-export interface Split { official: number; bot: number; human: number; span: number }
-
 /** Read-only view of the stored history with the derived numbers the dashboard shows. Built per render. */
 export class Model {
   private cache = new Map<string, Pt[]>();
-  private splits = new Map<string, Map<string, Split>>();
-  /**
-   * `basis: "human"` takes bots out of your own plugins' numbers (`mine`); everything else stays official,
-   * since competitors' versions aren't recorded and ranks compare with every plugin.
-   */
-  constructor(public store: Store, public basis: Basis = "official", private mine: string[] = []) {}
+  /** `mine`: your own plugins, whose forecast errors are pooled when one plugin has too few of its own. */
+  constructor(public store: Store, private mine: string[] = []) {}
 
-  /** The same history read on another basis. */
-  withBasis(basis: Basis): Model { return basis === this.basis ? this : new Model(this.store, basis, this.mine); }
-
-  /**
-   * The series on this model's basis: with bots taken out for your own plugins on the "human" basis.
-   * Days that can't be split keep their official value.
-   */
-  series(id: string): Pt[] {
-    if (this.basis !== "human" || !this.mine.includes(id)) return this.official(id);
-    const key = "human|" + id, hit = this.cache.get(key);
-    if (hit) return hit;
-    const split = this.split(id);
-    let cum: number | null = null;
-    const out = this.official(id).map((p): Pt => {
-      if (p.total == null) return { ...p };
-      if (cum == null) { cum = p.total; return { ...p }; }
-      const daily = p.daily == null ? null : split.get(p.date)?.human ?? p.daily;
-      cum += daily ?? 0;
-      return { ...p, total: cum, daily };
-    });
-    this.cache.set(key, out);
-    return out;
-  }
-
-  /**
-   * Bots fetch many recent versions at once, so on such a day several older versions grow by the same count k.
-   * Each version's growth up to k is taken as bots; the rest is new installs and updates. k is the median growth
-   * of the versions other than the newest, and a day with fewer than three of them growing had no bots.
-   * Bots fetching only the newest version can't be told apart, so `human` is an upper bound.
-   * Keyed like the series: by the day the downloads happened (the file's date - 1).
-   */
-  split(id: string): Map<string, Split> {
-    const hit = this.splits.get(id);
-    if (hit) return hit;
-    const out = new Map<string, Split>(), vd = this.store.vdays[id];
-    const dates = Object.keys(vd?.d ?? {}).sort();
-    for (let i = 1; i < dates.length; i++) {
-      const a = versionDay(vd, dates[i - 1]), b = versionDay(vd, dates[i]);
-      const pa = getPoint(this.store, id, dates[i - 1]), pb = getPoint(this.store, id, dates[i]);
-      if (!a || !b || !pa || !pb) continue;
-      const vs = Object.keys(b).sort(semverCmp), inc = (v: string) => Math.max(0, b[v] - (a[v] ?? 0));
-      const old = vs.slice(0, -1).map(inc).filter((x) => x > 0).sort((x, y) => x - y);
-      const k = old.length >= 3 ? old[Math.floor((old.length - 1) / 2)] : 0;
-      const official = Math.max(0, pb.downloads - pa.downloads);
-      const bot = Math.min(official, vs.reduce((n, v) => n + Math.min(inc(v), k), 0));
-      out.set(addDays(dates[i], -1), { official, bot, human: official - bot, span: dayDiff(dates[i - 1], dates[i]) });
-    }
-    this.splits.set(id, out);
-    return out;
-  }
-
-  /** Whether any of these plugins has enough split days to show the bots-excluded numbers. */
-  canSplit(ids: string[]): boolean {
-    return ids.some((id) => this.split(id).size >= 3);
-  }
+  /** A plugin's daily series. */
+  series(id: string): Pt[] { return this.official(id); }
 
   /**
    * Continuous daily series from the first to the last reading. Missed days carry `total: null`.

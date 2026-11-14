@@ -250,7 +250,7 @@ export function recordsCard(v: DashboardView, A: Analysis, id?: string): void {
 let namesAsked = false;
 /** The plugins 1,000 · 500 · 250 · 100 · 50 · 10 · 1 places above in the overall ranking, and the one just below. */
 export function ladderCard(v: DashboardView, id: string): void {
-  const off = v.m.withBasis("official"), A = off.analyze(off.series(id));
+  const off = v.m, A = off.analyze(off.series(id));
   if (!A) return;
   const rows = off.ladder(id, A.pace);
   if (!rows) return;

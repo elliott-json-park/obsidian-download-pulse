@@ -34,6 +34,9 @@ export default class PulsePlugin extends Plugin {
     // A language this version doesn't know (a newer or hand-edited data.json) follows Obsidian instead.
     if (!(LANGUAGES as readonly string[]).includes(this.settings.language)) this.settings.language = "auto";
     this.store = { ...emptyStore(), ...data?.store };
+    // 1.6 to 1.8 kept per-version counts by day to take bots out; 1.9 dropped that view, so the data file sheds them.
+    delete (this.store as Store & { vdays?: unknown }).vdays;
+    delete (this.settings.ui as UiState & { basis?: unknown }).basis;
     setLanguage(this.settings.language);
     const star = starOnLoad(data?.settings?.starAsk, !!data, this.manifest.version);
     const starMoved = starChanged(data?.settings?.starAsk, star);

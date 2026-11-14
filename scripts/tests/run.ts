@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { emptyStore, DEFAULT_SETTINGS, LANGUAGES, type Settings, type Store } from "../../src/types";
 import { setLanguage, resolveLanguage, t, loc, lang, type Dict, type Lang } from "../../src/i18n";
-import { setPoint, fillPoint, getPoint, logVersions, logVersionDay, versionDay, rankOf, recordDay, importInto, prune, addDays } from "../../src/data/store";
+import { setPoint, fillPoint, getPoint, logVersions, rankOf, recordDay, importInto, prune, addDays } from "../../src/data/store";
 import { Model, similarPlugins } from "../../src/analysis";
 import { forecast, etaRange } from "../../src/forecast";
 import { weeklyReport } from "../../src/report";
@@ -594,62 +594,7 @@ test("auto follows Obsidian's language, and an unknown setting falls back to it"
   assert.ok(LANGUAGES.includes(DEFAULT_SETTINGS.language));
 });
 
-// ---------- 1.6: bots, forecast range, ladder, records, months, report ----------
-test("version days keep counts by version and forget the oldest past 400 days", () => {
-  const s = emptyStore();
-  for (let i = 0; i < 405; i++) logVersionDay(s, "a", addDays("2025-01-01", i), { "1.0.0": i, ...(i > 400 ? { "1.1.0": 1 } : {}) });
-  const days = Object.keys(s.vdays.a.d).sort();
-  assert.equal(days.length, 400);
-  assert.equal(days[0], addDays("2025-01-01", 5));
-  assert.deepEqual(versionDay(s.vdays.a, days[399]), { "1.0.0": 404, "1.1.0": 1 });
-  assert.deepEqual(versionDay(s.vdays.a, days[0]), { "1.0.0": 5 });
-  assert.equal(versionDay(s.vdays.a, "2020-01-01"), null);
-  prune(s, new Set());
-  assert.equal(s.vdays.a, undefined);
-});
-
-test("the dashboard's history.json brings version days with it", () => {
-  const s = emptyStore();
-  importInto(s, { snapshots: {
-    "2026-08-14": { x: { downloads: 7, versions: { "1.0.0": 7 } } },
-    "2026-08-15": { x: { downloads: 12, versions: { "1.0.0": 7, "1.1.0": 5 } } },
-  } }, new Set(["x"]));
-  assert.deepEqual(versionDay(s.vdays.x, "2026-08-15"), { "1.0.0": 7, "1.1.0": 5 });
-});
-
-/** Four file days of a plugin with four versions: bots add 5 to each, people add to the newest. */
-function botDays(s: Store) {
-  const days = [[100, 100, 100, 100], [105, 105, 105, 135], [110, 110, 110, 165], [110, 110, 110, 175]];
-  days.forEach((c, i) => {
-    const raw: Record<string, number> = { downloads: c.reduce((a, b) => a + b, 0) };
-    c.forEach((n, k) => { raw[`1.${k}.0`] = n; });
-    recordDay(s, { a: raw }, addDays("2026-09-01", i), ["a"], new Set(["a"]));
-  });
-}
-
-test("bots: equal growth across older versions is taken out, the rest is people", () => {
-  const s = emptyStore();
-  botDays(s);
-  const m = new Model(s, "official", ["a"]), sp = m.split("a");
-  assert.deepEqual(sp.get("2026-09-01"), { official: 50, bot: 20, human: 30, span: 1 });
-  assert.deepEqual(sp.get("2026-09-02"), { official: 45, bot: 20, human: 25, span: 1 });
-  // Fewer than three older versions grew: no bots that day.
-  assert.deepEqual(sp.get("2026-09-03"), { official: 10, bot: 0, human: 10, span: 1 });
-  assert.equal(m.canSplit(["a"]), true);
-});
-
-test("bots: the human series adds up the human days and leaves others official", () => {
-  const s = emptyStore();
-  botDays(s);
-  setPoint(s, "b", "2026-09-01", 10); setPoint(s, "b", "2026-09-04", 40);
-  const off = new Model(s, "official", ["a"]), hum = off.withBasis("human");
-  assert.deepEqual(off.series("a").map((p) => p.total), [400, 450, 495, 505]);
-  assert.deepEqual(hum.series("a").map((p) => p.total), [400, 430, 455, 465]);
-  assert.deepEqual(hum.series("a").map((p) => p.daily), [null, 30, 25, 10]);
-  assert.deepEqual(hum.series("b"), off.series("b"));
-  assert.equal(new Model(s, "official", ["b"]).canSplit(["b"]), false);
-});
-
+// ---------- 1.6: forecast range, ladder, records, months, report ----------
 test("forecast: the range holds the expected total and widens with time", () => {
   const dailies = Array.from({ length: 60 }, (_, i) => 20 + ((i * 7) % 11) - 5);
   const f = forecast(1000, dailies, 60, { 7: [], 14: [] });
@@ -676,7 +621,7 @@ test("ladder: neighbours a few steps above and the one below, and when each is p
     recordDay(s, stats, day, ["p15"], new Set(["p15"]));
   }
   assert.deepEqual(s.near[1].s.p15, [null, null, null, null, null, "p5", "p14", "p16"]);
-  const rows = new Model(s, "official", ["p15"]).ladder("p15", 20);
+  const rows = new Model(s, ["p15"]).ladder("p15", 20);
   assert.ok(rows);
   const one = rows.find((r) => r.step === 1), below = rows.find((r) => r.step === "below");
   assert.deepEqual(one && { id: one.id, gap: one.gap, pace: one.pace, days: one.days }, { id: "p14", gap: 85, pace: 5, days: 6 });
