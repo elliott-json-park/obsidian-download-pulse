@@ -31,8 +31,6 @@ export interface VersionLog {
 export interface Release {
   version: string;
   date: string;
-  /** Times the release's main.js was downloaded. Obsidian fetches it only to install or update a plugin. */
-  installs?: number;
 }
 
 /**
@@ -123,8 +121,6 @@ export interface Store {
   githubAt: Record<string, number>;
   /** Highest milestone already announced per plugin. */
   celebrated: Record<string, number>;
-  /** Your plugins' main.js downloads summed over all releases, by the UTC day GitHub was read. */
-  installs: Record<string, Record<string, number>>;
   /** Your plugins missing from the newest official file. */
   delisted: Record<string, Delisted>;
   /** The plugins a few steps above and just below yours in the ranking, over the last days read. */
@@ -160,5 +156,5 @@ export const DEFAULT_SETTINGS: Settings = {
 export const emptyStore = (): Store => ({
   series: {}, of: {}, versions: {}, vstart: {}, releases: {}, repos: {}, updated: {},
   market: null, lastSha: "", publishedAt: 0, lastChecked: 0, archivedAt: {}, githubAt: {}, celebrated: {},
-  installs: {}, delisted: {}, near: [],
+  delisted: {}, near: [],
 });

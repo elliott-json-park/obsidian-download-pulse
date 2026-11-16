@@ -36,6 +36,9 @@ export default class PulsePlugin extends Plugin {
     this.store = { ...emptyStore(), ...data?.store };
     // 1.6 to 1.8 kept per-version counts by day to take bots out; 1.9 dropped that view, so the data file sheds them.
     delete (this.store as Store & { vdays?: unknown }).vdays;
+    // 1.5 to 1.9 recorded main.js downloads as installs; 1.10 dropped them, so the data file sheds those too.
+    delete (this.store as Store & { installs?: unknown }).installs;
+    for (const list of Object.values(this.store.releases)) for (const r of list) delete (r as { installs?: unknown }).installs;
     delete (this.settings.ui as UiState & { basis?: unknown }).basis;
     setLanguage(this.settings.language);
     const star = starOnLoad(data?.settings?.starAsk, !!data, this.manifest.version);

@@ -301,7 +301,7 @@ test("engine: a plugin missing from the newest file is marked once, and cleared 
   assert.deepEqual(h.store.delisted, {});
 });
 
-test("engine: main.js downloads of your releases are summed per day read", async () => {
+test("engine: releases keep version and date only, for yours and followed plugins", async () => {
   const meta = { a: { id: "a", name: "A", author: "", repo: "me/a", description: "" }, b: { id: "b", name: "B", author: "", repo: "you/b", description: "" } };
   const h = host({ mine: ["a"], competitors: { a: ["b"] }, useArchive: false, catchUp: false, meta });
   network([{ date: "2026-10-15", sha: "s1", stats: { a: { downloads: 30 }, b: { downloads: 50 } } }]);
@@ -312,33 +312,21 @@ test("engine: main.js downloads of your releases are summed per day read", async
   ];
   (globalThis as any).__routes["https://api.github.com/repos/"] = (url: string) => url.endsWith("/releases?per_page=100") ? { json: rel } : { json: { stargazers_count: 1, forks_count: 0, open_issues_count: 0, created_at: "" } };
   await new Engine(h).refresh();
-  assert.deepEqual(h.store.releases.a.map((r) => r.installs), [40, 25]);
-  assert.deepEqual(Object.values(h.store.installs.a), [65]);
-  assert.deepEqual(Object.values(h.store.installs.b), [65], "followed plugins' installs are kept too");
+  const want = [{ version: "1.1.0", date: "2026-10-10T00:00:00Z" }, { version: "1.0.0", date: "2026-10-01T00:00:00Z" }];
+  assert.deepEqual(h.store.releases.a, want);
+  assert.deepEqual(h.store.releases.b, want, "followed plugins' releases are read too");
+  assert.equal("installs" in h.store, false, "main.js downloads are no longer recorded");
 });
 
-test("installs: pace against the record nearest a week before, and the gain since a day", () => {
+test("prune keeps the delisted mark with its plugin; import ignores the dashboard's installs", () => {
   const s = emptyStore();
-  s.installs.a = { "2026-10-01": 100, "2026-10-08": 170, "2026-10-14": 220, "2026-10-15": 230 };
-  s.installs.b = { "2026-10-08": 10, "2026-10-15": 24 };
-  const m = new Model(s);
-  assert.deepEqual(m.installs(["a"]), { date: "2026-10-15", total: 230, prev: 170, span: 7, pace: 60 / 7 });
-  assert.deepEqual(m.installs(["a", "b"]), { date: "2026-10-15", total: 254, prev: 180, span: 7, pace: 74 / 7 });
-  assert.deepEqual(m.installsSince("a", "2026-10-14"), { from: "2026-10-14", to: "2026-10-15", gain: 10 });
-  assert.equal(m.installsSince("a", "2026-09-30"), null);
-  assert.equal(m.installs(["none"]), null);
-});
-
-test("prune and import keep installs and the delisted mark with their plugins", () => {
-  const s = emptyStore();
-  s.installs = { a: { "2026-10-15": 5 }, gone: { "2026-10-15": 1 } };
   s.delisted = { a: { since: "2026-10-15", last: 3 }, gone: { since: "2026-10-15", last: 1 } };
   prune(s, new Set(["a"]));
-  assert.deepEqual(Object.keys(s.installs), ["a"]);
   assert.deepEqual(Object.keys(s.delisted), ["a"]);
   const t2 = emptyStore();
   importInto(t2, { snapshots: { "2026-10-15": { a: { downloads: 3 } } }, installs: { "2026-10-15": { a: { total: 7, versions: {} } } } }, new Set(["a"]));
-  assert.deepEqual(t2.installs, { a: { "2026-10-15": 7 } });
+  assert.equal("installs" in t2, false);
+  assert.equal(t2.series.a.d.filter((v) => v != null).length, 1);
 });
 
 // ---------- 1.2: days, missed days, late-followed plugins, the publish schedule ----------

@@ -33,8 +33,7 @@ questions in plain sentences: *"Driving growth: Vault Pet 43%"*,
 
 **Your plugins, one by one and together.** For each plugin you get the total
 with a forecast, daily new downloads with a 7-day average, rank among all
-community plugins, the first three days of every release, and downloads by
-version. You also get a weekday pattern, a calendar and the milestones it has
+community plugins and the first three days of every release. You also get a weekday pattern, a calendar and the milestones it has
 passed. With more than one plugin, *Overview* adds them up and *Compare* puts
 them side by side, by date or by days since listing.
 
@@ -71,15 +70,10 @@ suggests similar ones from the directory) and switch a plugin's page to
 
 ![Vault Orrery against four 3D-graph plugins in Obsidian: #2 of 5, 23.6% of the group's new downloads this week, Galaxy View pulling away, no one behind gaining, and a card per plugin with its last 30 days](https://raw.githubusercontent.com/elliott-json-park/obsidian-download-pulse/main/docs/obsidian/2-competitors.png)
 
-**Installs, not just downloads.** The official count also includes Obsidian
-checking for updates. Download Pulse also reads how often each release's
-`main.js` was downloaded, which Obsidian fetches only to install or update a
-plugin. The *Installs (main.js)* tile shows that total and its pace a day.
-
 **A plugin that drops out of the official stats.** When the newest official
 file no longer lists one of your plugins, its total stops at the last value
 instead of looking like a quiet day. The dashboard says so on its page, in
-the overview and in the sidebar, with the installs since then. If milestone
+the overview and in the sidebar. If milestone
 notices are on, you also get a notice that day. The usual cause is a new
 release waiting for Obsidian's automated review (its Review on
 community.obsidian.md says "Not scanned"); otherwise the plugin was removed
@@ -212,7 +206,7 @@ nothing about your vault:
 | `api.github.com/repos/obsidianmd/obsidian-releases/commits` | Has a new stats file been published? One small call. | Each check (right after the daily publish by default, when you open the dashboard, and when you return to Obsidian; at most once per 5 minutes) |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/…/community-plugin-stats.json` | The official numbers, about 2.5 MB | Only when Obsidian has published a new file, about once a day |
 | `raw.githubusercontent.com/obsidianmd/obsidian-releases/HEAD/community-plugins.json` | Plugin names, authors and repos for search and suggestions | When you search or add competitors |
-| `api.github.com/repos/<owner>/<repo>` and `…/releases` | Stars and release dates of followed plugins, and `main.js` download counts for every followed plugin | At most twice a day per plugin |
+| `api.github.com/repos/<owner>/<repo>` and `…/releases` | Stars and release dates of followed plugins | At most twice a day per plugin |
 | `yulei-chen.github.io/obsidian-plugin-download-stats/data/plugins/<id>.json` | Earlier daily totals from a public, third-party archive of the official file. Not affiliated with Obsidian. | When you follow a plugin, then every few days. **Turn off with *Fill in past history*.** |
 
 With *Fill in past history* off, history starts the day you follow a plugin.
@@ -233,7 +227,6 @@ Obsidian's secret storage.
 - **总览与对比**：所有插件一页看完，可按日期或按上架天数并排比较。
 - **发布效果**：每次发布前后 3 天的下载量，以及每个版本的首发表现。
 - **竞品监控**：你在竞品组新增下载中的占比、与前一名的差距和预计超越的日期，以及身后正在追近的插件。
-- **实际安装**：每个版本 main.js 的下载次数。Obsidian 只在安装或更新插件时下载它，因此不包含自动的更新检查。
 - **统计中断提醒**：你的插件从最新的官方统计中消失时（通常是新版本在等待 Obsidian 的自动审核），在页面、总览和侧边栏中标出，并发出通知。
 - **一句话结论**：每张卡片开头用一句话说明要看什么。
 - **展望与记录**：一周、一个月和年底的预测及其范围（依据过去 21 次预测的偏差）、按月下载、本周变化的来源、各项纪录，以及排名上方 1～1,000 名的“超越阶梯”。

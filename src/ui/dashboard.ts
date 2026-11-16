@@ -1,7 +1,7 @@
 import { ItemView, setIcon, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import type PulsePlugin from "../main";
 import { Model, SMALL_BASE, mean, semverCmp, weekdayOf, type Analysis, type Momentum, type Pt } from "../analysis";
-import { addDays, dayDiff, todayUtc } from "../data/store";
+import { addDays, dayDiff } from "../data/store";
 import { loc, t } from "../i18n";
 import type { Range, UiState } from "../types";
 import {
@@ -326,11 +326,9 @@ export class DashboardView extends ItemView {
     heroLine.empty(); heroChips.empty(); heroMs.empty();
     if (!A) return;
     const gone = scope.id ? this.m.delisted(scope.id) : null;
-    if (gone) {
-      // Its total stopped at the last file that had it; main.js downloads still show whether people install it.
-      const ins = this.m.installsSince(scope.id as string, gone.since);
-      rich(heroLine, `{down|${t().delistedLine(longDate(gone.date), fmt(gone.last))}}` + (ins ? " · " + t().installsSince(longDate(ins.from), signed(ins.gain)) : ""));
-    } else if (scope.line) rich(heroLine, scope.line);
+    // Its total stopped at the last file that had it; say so instead of showing it as today's.
+    if (gone) rich(heroLine, `{down|${t().delistedLine(longDate(gone.date), fmt(gone.last))}}`);
+    else if (scope.line) rich(heroLine, scope.line);
     else if (A.last) {
       const day = signed(A.last.daily);
       const record = A.lastRank === 1 && A.d.length > 7;
@@ -515,22 +513,11 @@ export class DashboardView extends ItemView {
     this.revealer.add(el);
   }
 
-  /** main.js downloads: Obsidian fetches it only to install or update, so the count leaves out update checks and stats bots. */
-  private installsTile(ids: string[], official: number, color?: string): Tile | null {
-    const x = this.m.installs(ids);
-    if (!x) return null;
-    return { label: t().tInstalls, value: x.total, color, sub: x.pace != null ? t().installsPace(fmt1(x.pace)) : t().installsFrom(longDate(x.date)),
-      tip: t().installsTip(official > 0 ? Math.round(x.total / official * 100) + "%" : "–") + (x.pace != null ? "\n" + t().installsVs(x.span, fmt(x.prev)) : "") };
-  }
-
   /** The first insight when your plugins dropped out of the official file: what stopped, since when, and where to look. */
   private delistedInsight(ids: string[]): Insight | null {
     const gone = ids.map((id) => ({ id, d: this.m.delisted(id) })).filter((x): x is { id: string; d: NonNullable<typeof x.d> } => !!x.d);
     if (!gone.length) return null;
-    const lines = gone.map(({ id, d }) => {
-      const ins = this.m.installsSince(id, d.since);
-      return t().delistedItem(this.nameOf(id), longDate(d.date), fmt(d.last)) + (ins ? " · " + t().installsSince(longDate(ins.from), signed(ins.gain)) : "");
-    });
+    const lines = gone.map(({ id, d }) => t().delistedItem(this.nameOf(id), longDate(d.date), fmt(d.last)));
     return { k: t().kDelisted, t: ids.length === 1 ? t().delistedHead(longDate(gone[0].d.date)) : gone.map((x) => this.nameOf(x.id)).join(" · "), b: [...lines, t().delistedBody].join("\n") };
   }
 
@@ -669,12 +656,11 @@ export class DashboardView extends ItemView {
     });
   }
 
+  /** The milestones passed. The next one and when it's due are the hero's bar, so they aren't repeated here. */
   private journeyCard(A: Analysis, name: string) {
-    if (!A.next && !A.achieved.length) return;
-    const list = A.achieved.slice(-6);
-    const r = this.m.eta(A);
-    const jLede = list.length >= 2 ? t().jLede(fmt(list[0].m), fmt(list[list.length - 1].m), dayDiff(list[0].date, list[list.length - 1].date)) +
-      (A.next && r ? " · " + t().jLedeNext(fmt(A.next), dateSpan(addDays(A.lastDate, r.lo), r.hi != null ? addDays(A.lastDate, r.hi) : null)) : "") : "";
+    if (!A.achieved.length) return;
+    const list = A.achieved.slice(-7);
+    const jLede = list.length >= 2 ? t().jLede(fmt(list[0].m), fmt(list[list.length - 1].m), dayDiff(list[0].date, list[list.length - 1].date)) : "";
     this.domCard({ title: t().cMilestones, desc: t().dMilestones(name), wide: true, lede: jLede }, (el) => {
       const j = el.createDiv({ cls: "pp-journey" });
       list.forEach((x, i) => {
@@ -686,13 +672,6 @@ export class DashboardView extends ItemView {
         stop.createDiv({ cls: "pp-stop-m", text: fmt(x.m) });
         stop.createDiv({ text: shortDate(x.date) });
       });
-      if (A.next) {
-        const stop = j.createDiv({ cls: "pp-stop is-next" });
-        stop.setCssProps({ "--pp-d": String(list.length) });
-        stop.createDiv({ cls: "pp-stop-dot" });
-        stop.createDiv({ cls: "pp-stop-m", text: fmt(A.next) });
-        stop.createDiv({ text: A.etaDate ? t().expected(shortDate(A.etaDate)) : "–" });
-      }
     });
   }
 
@@ -731,34 +710,6 @@ export class DashboardView extends ItemView {
     });
   }
 
-  private standingCard(ids: string[]) {
-    const st = ids.map((id) => this.m.standing(id)).filter((x): x is NonNullable<typeof x> => !!x);
-    const arr = this.plugin.store.market?.downloads;
-    if (!st.length || !arr?.length) return;
-    const sorted = [...st].sort((a, b) => a.topPct - b.topPct);
-    const med = arr[Math.floor(arr.length / 2)], best = sorted[0], above = st.filter((x) => x.downloads > med).length;
-    const sLede = st.length === 1 ? t().standLedeOne(fmt1(best.downloads / Math.max(1, med)), fmt(med), fmt1(best.topPct))
-      : t().standLedeMany(st.length, above, fmt(med), this.nameOf(best.id), fmt1(best.topPct));
-    this.domCard({ title: t().cStanding, desc: t().dStanding(fmt(arr.length), fmt(arr[0])), wide: true, lede: sLede }, (el) => {
-      const stand = el.createDiv({ cls: "pp-stand" });
-      stand.setCssProps({ "--pp-lv": String(st.length) });
-      for (const p of [50, 25, 10]) {
-        const tick = stand.createDiv({ cls: "pp-stand-tick" });
-        tick.setCssStyles({ left: 100 - p + "%" });
-        tick.createSpan({ text: t().topPct(String(p)) });
-      }
-      const dots: [HTMLElement, number][] = [];
-      st.forEach((s, i) => {
-        const me = stand.createDiv({ cls: "pp-stand-me" });
-        me.setCssProps({ "--pp-c": this.colorOf(s.id), "--pp-d": String(i), "--pp-k": String(sorted.indexOf(s)) });
-        this.tip.bind(me, `**${this.nameOf(s.id)}** ${t().rankTick(fmt(s.rank))} / ${fmt(s.of)}` + (s.need100 && s.need100 > 0 ? `\n${t().more100(signed(s.need100))}` : ""));
-        me.createSpan({ text: (st.length > 1 ? this.nameOf(s.id) + " · " : "") + t().topPct(fmt1(s.topPct)) });
-        dots.push([me, 100 - s.topPct]);
-      });
-      return () => dots.forEach(([d, l]) => d.setCssStyles({ left: l + "%" }));
-    });
-  }
-
   // ---------- one plugin ----------
   private renderPlugin(id: string) {
     const P = this.P, color = this.colorOf(id), name = this.nameOf(id), store = this.plugin.store;
@@ -773,7 +724,6 @@ export class DashboardView extends ItemView {
     this.tiles([
       this.moTile(A, full, color),
       { label: t().tLast30, value: this.m.gainOver(full, 30) ?? 0, prefix: "+", bars: full.slice(-30).map((x) => x.daily), color },
-      this.installsTile([id], A.total, color),
       st && { label: t().tRank, value: st.rank, pre: t().rankPre, unit: t().rankPost, sub: t().topPct(fmt1(st.topPct)), spark: full.filter((x) => x.rank).slice(-30).map((x) => -(x.rank as number)), color },
       A.best && { label: t().tBest, value: A.best.daily, prefix: "+", sub: longDate(A.best.date) },
       versions[0] && { label: t().tVersion, value: "v" + versions[0].version, sub: t().thisVersion(fmt(versions[0].total), versions.length) },
@@ -811,23 +761,7 @@ export class DashboardView extends ItemView {
     outlookCard(this, A, color);
     monthlyCard(this, full, A, { color });
 
-    if (versions.length) {
-      const relDate = Object.fromEntries((store.releases[id] ?? []).map((r) => [r.version, r.date.slice(0, 10)]));
-      const vTop = versions.reduce((b, x) => x.total > b.total ? x : b, versions[0]);
-      const vLede = t().verLede(versions[0].version, fmt(versions[0].total)) + (vTop !== versions[0] ? " · " + t().verLedeTop(vTop.version, fmt(vTop.total)) : "");
-      this.chartCard({ title: t().cVersions, desc: t().dVersions(versions.length), lede: vLede, height: Math.max(240, versions.length * 22 + 40) }, () => {
-        const o = baseOptions(P, this.plugin.motion(), { indexAxis: "y" });
-        o.plugins.tooltip.callbacks = { title: (it: TI[]) => "v" + it[0].label, label: (it: TI) => ` ${t().hTotal} ${fmt(num(it.raw))}`, afterLabel: (it: TI) => relDate[it.label] ? t().released2(relDate[it.label]) : "" };
-        o.scales.y.ticks.callback = versionTick;
-        o.scales.y.ticks.autoSkip = false;
-        return {
-          type: "bar",
-          data: { labels: versions.map((v) => v.version), datasets: [{ data: versions.map((v) => v.total), backgroundColor: color, borderRadius: { topRight: 4, bottomRight: 4 }, borderSkipped: "left", maxBarThickness: 16 }] },
-          options: o,
-        };
-      });
-    }
-
+    // Downloads by version are left out: the official count includes update checks, so older versions only pile up.
     const launches = launchesAll;
     if (launches.length) {
       const peak = launches.reduce((b, v, i) => !v.partial && (b < 0 || v.first3 > launches[b].first3) ? i : b, -1);
@@ -854,7 +788,6 @@ export class DashboardView extends ItemView {
 
     impactCard(this, id, full, color);
     ladderCard(this, id);
-    this.standingCard([id]);
     this.whenCard(A, color);
     this.journeyCard(A, name);
     recordsCard(this, A, id);
@@ -877,7 +810,6 @@ export class DashboardView extends ItemView {
     this.tiles([
       this.moTile(A, full),
       { label: t().tLast30, value: this.m.gainOver(A.full, 30) ?? 0, prefix: "+", bars: full.slice(-30).map((x) => x.daily) },
-      this.installsTile(mine, A.total),
       A.best && { label: t().tBest, value: A.best.daily, prefix: "+", sub: longDate(A.best.date) },
       { label: t().tPlugins, value: t().pluginsAndReleases(mine.length, versionCount), sub: t().tPluginsSub },
       Object.keys(store.repos).some((id) => mine.includes(id)) && { label: t().tStars, value: stars, sub: mine.map((id) => `${this.nameOf(id).split(" ").pop()} ${store.repos[id]?.stars ?? 0}`).join(" · ") },
@@ -921,7 +853,6 @@ export class DashboardView extends ItemView {
     outlookCard(this, A, P.ink2);
     if (mine.length > 1) { raceCard(this, mine); streamCard(this, mine, labels); }
     this.rankCard(mine, true);
-    this.standingCard(mine);
     if (mine.length > 1) { this.releasesCard(mine, labels); scoreCard(this, mine); }
     this.whenCard(A);
     this.journeyCard(A, t().allPlugins);
@@ -1002,22 +933,20 @@ export class DashboardView extends ItemView {
     this.sideBySide(mine, { smooth: true });
     raceCard(this, mine);
     this.rankCard(mine, true);
-    this.standingCard(mine);
 
     const an = new Map(mine.map((id) => [id, this.m.analyze(this.m.series(id))]));
     const scale = this.moScale([...an.values()]);
-    const perDay = (a: Analysis | null | undefined) => a ? mean(a.d.slice(-14).filter((x) => !x.gap).map((x) => x.daily)) : null;
+    // The 30-day gain is on each plugin's tile above, so the table keeps what the tiles don't show.
     const rows: Row[] = mine.map((id) => {
-      const full = this.m.series(id), latest = this.m.latest(id), a = an.get(id), st = this.m.standing(id);
+      const latest = this.m.latest(id), a = an.get(id), st = this.m.standing(id);
       const vs = Object.keys(store.versions[id] ?? {}).sort(semverCmp);
       return [{ text: `§${this.colorOf(id)}§${this.nameOf(id)}`, sort: this.nameOf(id) }, { text: fmt(latest?.downloads), sort: latest?.downloads }, { text: signed(a?.sum7), sort: a?.sum7 },
-        this.moCell(a, this.nameOf(id), scale), { text: signed(this.m.gainOver(full, 30)), sort: this.m.gainOver(full, 30) },
-        { text: fmt1(perDay(a)), sort: perDay(a) }, { text: st ? t().rankTick(fmt(st.rank)) : "–", sort: st ? -st.rank : null },
-        vs.length ? "v" + vs[vs.length - 1] : "–", { text: fmt(vs.length), sort: vs.length }, { text: fmt(store.repos[id]?.stars), sort: store.repos[id]?.stars }, { text: full[0]?.date ?? "–", sort: full[0]?.date }];
+        this.moCell(a, this.nameOf(id), scale), { text: st ? t().rankTick(fmt(st.rank)) : "–", sort: st ? -st.rank : null },
+        vs.length ? "v" + vs[vs.length - 1] : "–", { text: fmt(vs.length), sort: vs.length }, { text: fmt(store.repos[id]?.stars), sort: store.repos[id]?.stars }];
     });
-    const foot: Row | undefined = A && total.length ? [`**${t().hSum}**`, `**${fmt(A.total)}**`, signed(A.sum7), { ...this.moCell(A, t().allPlugins, scale), sort: undefined }, signed(this.m.gainOver(A.full, 30)),
-      fmt1(perDay(A)), "–", "–", fmt(mine.reduce((n, id) => n + Object.keys(store.versions[id] ?? {}).length, 0)), fmt(mine.reduce((n, id) => n + (store.repos[id]?.stars ?? 0), 0)), total[0].date] : undefined;
-    this.tableCard([t().hPlugin, t().hTotal, t().h7, t().hMomentum, t().h30, t().hPerDay, t().hRank, t().hLatest, t().hVersions, t().hStars, t().hFirst], rows, t().cSummary, t().dSummary, true,
+    const foot: Row | undefined = A && total.length ? [`**${t().hSum}**`, `**${fmt(A.total)}**`, signed(A.sum7), { ...this.moCell(A, t().allPlugins, scale), sort: undefined },
+      "–", "–", fmt(mine.reduce((n, id) => n + Object.keys(store.versions[id] ?? {}).length, 0)), fmt(mine.reduce((n, id) => n + (store.repos[id]?.stars ?? 0), 0))] : undefined;
+    this.tableCard([t().hPlugin, t().hTotal, t().h7, t().hMomentum, t().hRank, t().hLatest, t().hVersions, t().hStars], rows, t().cSummary, t().dSummary, true,
       { sort: { key: "compare", col: 3 }, foot, headTips: { 3: t().thMomentum } });
   }
 
@@ -1082,28 +1011,23 @@ export class DashboardView extends ItemView {
 
     this.rankCard(group, true);
     this.releasesCard(group, labels);
-    this.standingCard(group);
 
-    const today = todayUtc();
     const an = new Map(group.map((id) => [id, this.m.analyze(this.m.series(id))]));
     const scale = this.moScale([...an.values()]);
+    // The 30-day gain is on each plugin's tile above, so the table keeps what the tiles don't show.
     const rows: Row[] = group.map((id) => {
-      const full = this.m.series(id), latest = this.m.latest(id), a = an.get(id), st = this.m.standing(id);
+      const latest = this.m.latest(id), a = an.get(id), st = this.m.standing(id);
       const race = id === me ? null : this.m.race(me, id);
       const rel = [...(store.releases[id] ?? [])].sort((x, y) => y.date.localeCompare(x.date));
       const cad = this.m.cadence(id);
-      const upd = store.updated[id], ago = upd ? Math.max(0, dayDiff(new Date(upd).toISOString().slice(0, 10), today)) : null;
       const name = this.nameOf(id) + (id === me ? ` (${t().you})` : "");
-      const perDay = a ? mean(a.d.slice(-14).filter((x) => !x.gap).map((x) => x.daily)) : null;
       return [{ text: `§${this.colorOf(id)}§${name}`, sort: this.nameOf(id) }, { text: fmt(latest?.downloads), sort: latest?.downloads }, { text: signed(a?.sum7), sort: a?.sum7 },
-        this.moCell(a, this.nameOf(id), scale), { text: signed(this.m.gainOver(full, 30)), sort: this.m.gainOver(full, 30) },
-        { text: fmt1(perDay), sort: perDay }, { text: st ? t().rankTick(fmt(st.rank)) : "–", sort: st ? -st.rank : null },
+        this.moCell(a, this.nameOf(id), scale), { text: st ? t().rankTick(fmt(st.rank)) : "–", sort: st ? -st.rank : null },
         { text: !race || !race.gap ? "–" : race.gap > 0 ? t().gapAhead(fmt(race.gap)) : t().gapBehind(fmt(-race.gap)), sort: race?.gap },
         { text: race?.days == null ? "–" : race.days > 365 ? t().overYear : race.gap > 0 ? "~" + t().daysN(fmt(race.days)) : `{down|${t().caughtIn(fmt(race.days))}}`, sort: race?.days == null ? null : -race.days },
-        rel[0] ? "v" + rel[0].version : "–", { text: ago == null ? "–" : t().ago(ago), sort: ago == null ? null : -ago },
-        { text: cad != null ? t().daysN(fmt1(cad)) : "–", sort: cad == null ? null : -cad }, { text: fmt(store.repos[id]?.stars), sort: store.repos[id]?.stars }, { text: full[0]?.date ?? "–", sort: full[0]?.date }];
+        rel[0] ? "v" + rel[0].version : "–", { text: cad != null ? t().daysN(fmt1(cad)) : "–", sort: cad == null ? null : -cad }, { text: fmt(store.repos[id]?.stars), sort: store.repos[id]?.stars }];
     });
-    this.tableCard([t().hPlugin, t().hTotal, t().h7, t().hMomentum, t().h30, t().hPerDay, t().hRank, t().hGap, t().hEta, t().hLatest, t().hUpdated, t().hCadence, t().hStars, t().hFirst],
+    this.tableCard([t().hPlugin, t().hTotal, t().h7, t().hMomentum, t().hRank, t().hGap, t().hEta, t().hLatest, t().hCadence, t().hStars],
       rows, t().cSummary, t().dSummary, true, { sort: { key: "rivals", col: 3 }, headTips: { 3: t().thMomentum } });
   }
 
@@ -1291,12 +1215,6 @@ export class DashboardView extends ItemView {
     const out = this.baseInsights(A);
     const gone = this.delistedInsight([id]);
     if (gone) out.unshift(gone);
-    const s = this.m.standing(id);
-    if (s) out.push({ k: t().kOverall, t: t().overallHead(fmt(s.rank), fmt1(s.topPct)), b: [
-      s.climbed7 && s.climbed7 > 0 ? t().climbed7(fmt(s.climbed7)) : s.climbed7 && s.climbed7 < 0 ? t().fell7(fmt(-s.climbed7)) : "",
-      s.need100 && s.need100 > 0 ? t().need100(signed(s.need100)) : "",
-      s.band && s.needBand ? t().needBand(s.band, signed(s.needBand)) : "",
-    ].filter(Boolean).join(" · ") || t().topPct(fmt1(s.topPct)) });
     const launches = this.m.launches(id).filter((v) => v.known && !v.partial);
     const bestV = launches.reduce<typeof launches[number] | null>((b, v) => !b || v.first3 > b.first3 ? v : b, null);
     if (bestV) {

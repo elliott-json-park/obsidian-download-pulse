@@ -276,7 +276,7 @@ export class Engine extends Events {
     return changed;
   }
 
-  /** Release dates, main.js downloads and stars. GitHub allows 60 anonymous calls an hour, so this runs twice a day at most. */
+  /** Release dates and stars. GitHub allows 60 anonymous calls an hour, so this runs twice a day at most. */
   private async readGithub(ids: string[], notes: string[]): Promise<boolean> {
     const token = this.host.token();
     const due = ids.filter((id) => this.settings.meta[id]?.repo && Date.now() - (this.store.githubAt[id] ?? 0) > GITHUB_EVERY);
@@ -290,10 +290,6 @@ export class Engine extends Events {
       try {
         const [releases, info] = await Promise.all([fetchReleases(repo, token), fetchRepo(repo, token)]);
         this.store.releases[id] = releases;
-        // A running total of main.js downloads per day read, so the dashboard can show installs a day.
-        if (releases.some((r) => r.installs != null)) {
-          (this.store.installs[id] ??= {})[todayUtc()] = releases.reduce((n, r) => n + (r.installs ?? 0), 0);
-        }
         this.store.repos[id] = info;
         this.store.githubAt[id] = Date.now();
         changed = true;

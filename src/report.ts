@@ -13,7 +13,7 @@ const pct = (ratio: number | null | undefined): string => {
 
 /**
  * The week in a Markdown note: the overview, a table by plugin, this week's releases and what's coming. Official
- * numbers, with installs beside them when they are known. Returns null without data.
+ * numbers. Returns null without data.
  */
 export function weeklyReport(store: Store, settings: Settings): { date: string; text: string } | null {
   const mine = settings.mine;
@@ -25,14 +25,13 @@ export function weeklyReport(store: Store, settings: Settings): { date: string; 
   const A: Analysis | null = total ? m.analyzeTotal(total) : m.analyze(m.series(mine[0]));
   if (!A) return null;
   const nameOf = (id: string) => settings.meta[id]?.name ?? id;
-  const inst = m.installs(mine);
   const last = A.lastDate, from = addDays(last, -6);
   const L: string[] = [];
   L.push(`# ${t().rpTitle(last)}`, "");
   L.push(`> ${t().rpBasis(longDate(last), shortDate(from), shortDate(last), shortDate(addDays(last, -13)), shortDate(addDays(last, -7)))}`, "");
 
   L.push(`## ${t().rpGlance}`, "");
-  L.push(`- ${t().rpTotal(fmt(A.total))}` + (inst ? ` · ${t().rpInstalls(fmt(inst.total))}` : ""));
+  L.push(`- ${t().rpTotal(fmt(A.total))}`);
   L.push(`- ${t().rp7(signed(A.sum7), pct(A.mo?.ratio), fmt1(A.pace))}`);
   const months = m.months(full, A), cur = months[months.length - 1];
   if (cur?.current) {
