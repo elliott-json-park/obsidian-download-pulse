@@ -146,7 +146,8 @@ days: 30
 **Links into the dashboard.** `obsidian://plugin-pulse?view=vault-orrery&mode=rivals`
 opens a page of the dashboard from anywhere: a note, a bookmark, a launcher.
 `view` is `overview`, `compare` or a plugin id; `mode` is `self` or `rivals`;
-`range` is `7`, `30`, `90`, `365` or `all`.
+`range` is `7`, `30`, `90`, `365` or `all`. Add `glance=1` to open the sidebar widget
+as well, e.g. `obsidian://plugin-pulse?view=overview&glance=1`.
 
 An optional status bar item shows your plugins' new downloads on the latest day.
 
